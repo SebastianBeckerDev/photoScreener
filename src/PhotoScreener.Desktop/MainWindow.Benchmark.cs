@@ -1,9 +1,10 @@
 using System.Diagnostics;
 using System.Text.Json;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Avalonia.Media.Imaging;
 using PhotoScreener.Desktop.Diagnostics;
 
 namespace PhotoScreener.Desktop;
@@ -11,68 +12,136 @@ public partial class MainWindow
 {
     private partial void StartBenchmark()
     {
-        var feedback = new List<double>(); var frames = new List<double>();
+        var feedback = new List<double>(); var handlers = new List<double>(); var frames = new List<double>();
         var lows = new List<double>(); var fulls = new List<double>();
-        var clock = Stopwatch.StartNew(); var started = clock.Elapsed.TotalMilliseconds;
-        double? pendingFrame = null; string? pendingPhoto = null;
-        var maxWorkingSet = 0L; var maxQueue = 0; var maxCache = 0L; var actions = 0; var ready = false;
+        var stableLow = new List<double>(); var stableFull = new List<double>(); var deliveries = new List<double>();
+        var clock = Stopwatch.StartNew(); var frameInputs = new Queue<double>();
+        var usable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource? fullReady = null; var focusedAt = 0d; var stableAt = 0d; var stable = false;
+        var maxWorkingSet = 0L; var maxQueue = 0; var maxCache = 0L; var maxPending = 0; var maxRealized = 0;
+        var errors = new List<string>(); var completed = 0; var totalOperations = 0;
+        var maintenanceErrors = new List<string>();
+        mutations!.MaintenanceError += error => { lock (maintenanceErrors) maintenanceErrors.Add(error.ToString()); };
+        var sections = new Dictionary<string, List<double>>();
+        ActionSection += (section, elapsed) => { if (!sections.TryGetValue(section, out var values)) sections[section] = values = []; values.Add(elapsed); };
         var probe = new FrameProbe { IsHitTestVisible = false, Width = 1, Height = 1, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
         ((Grid)Surface.Parent!).Children.Add(probe);
-        probe.Submitted = () => { if (pendingFrame.HasValue) { frames.Add(clock.Elapsed.TotalMilliseconds - pendingFrame.Value); pendingFrame = null; } };
-        PreviewPublished += (row, full) =>
+        probe.Submitted = () => { while (frameInputs.TryDequeue(out var input)) frames.Add(clock.Elapsed.TotalMilliseconds - input); };
+        FocusRequested += (_, _) => focusedAt = clock.Elapsed.TotalMilliseconds;
+        PreviewPublished += (_, full) =>
         {
-            if (pendingPhoto != row.Photo.Path) return;
-            (full ? fulls : lows).Add(clock.Elapsed.TotalMilliseconds - started);
+            usable.TrySetResult();
+            if (stable)
+            { (full ? stableFull : stableLow).Add(clock.Elapsed.TotalMilliseconds - stableAt); if (full) fullReady?.TrySetResult(); }
+            else (full ? fulls : lows).Add(clock.Elapsed.TotalMilliseconds - focusedAt);
         };
-        var countIndex = Array.IndexOf(arguments, "--actions");
-        var requestedActions = countIndex >= 0 && countIndex + 1 < arguments.Length ? int.Parse(arguments[countIndex + 1]) : 1200;
+        mutations!.Completed += result => { Interlocked.Increment(ref totalOperations); if (result.Error != null) lock (errors) errors.Add(result.Error); };
+        var requestedActions = OptionInt("--actions", 1200); var stableSamples = OptionInt("--stable", 30);
         var outputIndex = Array.IndexOf(arguments, "--report");
         var output = outputIndex >= 0 && outputIndex + 1 < arguments.Length ? arguments[outputIndex + 1] : Path.Combine("artifacts", "performance", "window.json");
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        timer.Tick += async (_, _) =>
+        var sampling = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        sampling.Tick += (_, _) =>
         {
-            if (current == null)
+            using var process = Process.GetCurrentProcess(); maxWorkingSet = Math.Max(maxWorkingSet, process.WorkingSet64);
+            maxQueue = Math.Max(maxQueue, Images.QueueCount); maxCache = Math.Max(maxCache, Images.CacheBytes); maxPending = Math.Max(maxPending, mutations.PendingCount);
+            maxRealized = Math.Max(maxRealized, Strip.GetVisualDescendants().Count(c => c is ThumbnailView));
+        };
+        sampling.Start();
+        _ = Execute();
+        async Task Execute()
+        {
+            try
             {
-                if (clock.Elapsed.TotalSeconds > 10)
+                await usable.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                var firstUsable = clock.Elapsed.TotalMilliseconds;
+                Surface.Focus(); var inputStarted = clock.Elapsed.TotalMilliseconds;
+                await Task.Run(async () =>
                 {
-                    timer.Stop(); Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
-                    File.WriteAllText(output, JsonSerializer.Serialize(new { error = "No focused photo", folder = this.FindControl<TextBlock>("FolderStatus")!.Text })); Close();
+                    using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
+                    for (var action = 0; action < requestedActions; action++)
+                    {
+                        await timer.WaitForNextTickAsync(); var arrived = clock.Elapsed.TotalMilliseconds; var ordinal = action;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (closing) return;
+                            var began = clock.Elapsed.TotalMilliseconds; deliveries.Add(began - inputStarted);
+                            frameInputs.Enqueue(arrived);
+                            var key = ordinal % 5 == 0 ? Key.Space : ordinal / 100 % 2 == 0 ? Key.Right : Key.Left;
+                            Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = Surface });
+                            Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyUpEvent, Key = key, Source = Surface });
+                            handlers.Add(clock.Elapsed.TotalMilliseconds - began); feedback.Add(clock.Elapsed.TotalMilliseconds - arrived);
+                            probe.InvalidateVisual(); Interlocked.Increment(ref completed);
+                        }, DispatcherPriority.Input);
+                    }
+                });
+                while (completed < requestedActions) await Task.Delay(10);
+                var inputElapsed = (clock.Elapsed.TotalMilliseconds - inputStarted) / 1000;
+                await mutations.DrainAsync().WaitAsync(TimeSpan.FromSeconds(60));
+                var mixedSeconds = (clock.Elapsed.TotalMilliseconds - inputStarted) / 1000;
+                var mixedCopyBytes = mutations.CopiedBytes; var mixedHashBytes = comparer.HashReadBytes;
+                stable = true;
+                for (var i = 0; i < stableSamples && rows.Count > 0; i++)
+                {
+                    await Task.Run(Images.ClearCache);
+                    fullReady = new(TaskCreationOptions.RunContinuationsAsynchronously); stableAt = clock.Elapsed.TotalMilliseconds;
+                    FocusPhoto(rows[(i * 37) % rows.Count]);
+                    await fullReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 }
-                return;
-            }
-            if (!ready) { ready = true; clock.Restart(); }
-            using var process = Process.GetCurrentProcess();
-            maxWorkingSet = Math.Max(maxWorkingSet, process.WorkingSet64); maxQueue = Math.Max(maxQueue, Images.QueueCount); maxCache = Math.Max(maxCache, Images.CacheBytes);
-            if (actions >= requestedActions)
-            {
-                timer.Stop();
+                sampling.Stop();
                 var result = new
                 {
-                    kind = "real-window routed-key injection; drawing submission, not physical display",
+                    kind = "real-window fixed-rate routed-key injection; drawing submission, not physical display",
                     timestampUtc = DateTime.UtcNow, os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
                     framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                    runtimeAssembly = typeof(object).Assembly.Location,
                     cpu = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"), processors = Environment.ProcessorCount,
-                    source = activeFolder, photos = rows.Count, previewPhysical = new { width = Preview.Bounds.Width * RenderScaling, height = Preview.Bounds.Height * RenderScaling },
-                    actions, elapsedSeconds = clock.Elapsed.TotalSeconds,
-                    feedback = Summary(feedback), frameSubmission = Summary(frames), lowPublication = Summary(lows), fullPublication = Summary(fulls),
-                    peakSampledWorkingSetMiB = maxWorkingSet / 1048576d, maxQueue, maxCacheMiB = maxCache / 1048576d,
-                    limitation = "Synthetic diagnostic unless supplied corpus meets reference contract. No physical-display, uncached-SSD or Mac gate inferred."
+                    source = activeFolder, export = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot, photos = rows.Count,
+                    previewPhysical = new { width = Surface.Bounds.Width * RenderScaling, height = Surface.Bounds.Height * RenderScaling },
+                    firstUsableMs = firstUsable, actions = completed, inputElapsedSeconds = inputElapsed, deliveredPerSecond = completed / inputElapsed,
+                    feedback = Summary(feedback), handler = Summary(handlers), frameSubmission = Summary(frames),
+                    sections = sections.ToDictionary(e => e.Key, e => Summary(e.Value)),
+                    navigatingLowPublication = Summary(lows), navigatingFullPublication = Summary(fulls),
+                    stableDecodedCacheColdLow = Summary(stableLow), stableDecodedCacheColdFull = Summary(stableFull),
+                    deliveredCadenceMs = Summary(deliveries.Zip(deliveries.Skip(1), (a, b) => b - a).ToList()),
+                    peakSampledWorkingSetMiB = maxWorkingSet / 1048576d, maxQueue, maxCacheMiB = maxCache / 1048576d, maxPending, maxRealizedThumbnails = maxRealized,
+                    totalOperations, copiedBytes = mutations.CopiedBytes, hashReadBytes = comparer.HashReadBytes, errors = errors.ToArray(),
+                    mutationThroughput = new { mixedSeconds, copiedBytesPerSecond = mixedCopyBytes / mixedSeconds, hashBytesPerSecond = mixedHashBytes / mixedSeconds },
+                    thumbnailDiskWrites = Images.ThumbnailWrites,
+                    metadataWrites = metadata.SuccessfulWrites, maintenanceErrors = maintenanceErrors.ToArray(),
+                    limitation = "Synthetic diagnostics are not representative photographic evidence. Decoded-cache cold does not establish uncached SSD timing. No physical-display or Mac gate inferred."
                 };
-                await Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!); File.WriteAllText(output, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })); });
-                Close(); return;
+                await Write(result);
+                var screenshot = Array.IndexOf(arguments, "--screenshot");
+                if (screenshot >= 0 && screenshot + 1 < arguments.Length)
+                {
+                    fullReady = new(TaskCreationOptions.RunContinuationsAsynchronously); FocusPhoto(rows[0]);
+                    await fullReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    if (arguments.Contains("--zoom-screenshot"))
+                    {
+                        fullReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                        Preview.ZoomAt(new Avalonia.Point(Preview.Bounds.Width * .65, Preview.Bounds.Height * .55), 3);
+                        await fullReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                    for (var retry = 0; retry < 100; retry++)
+                    {
+                        await Task.Delay(10);
+                        var tiles = Strip.GetVisualDescendants().OfType<ThumbnailView>().ToArray();
+                        if (tiles.Length > 0 && tiles.All(t => t.Source != null)) break;
+                    }
+                    using var snapshot = new RenderTargetBitmap(new Avalonia.PixelSize((int)(Bounds.Width * RenderScaling), (int)(Bounds.Height * RenderScaling)), new Avalonia.Vector(96 * RenderScaling, 96 * RenderScaling));
+                    snapshot.Render(this);
+                    var path = Path.GetFullPath(arguments[screenshot + 1]);
+                    await Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(path)!); snapshot.Save(path); });
+                }
             }
-            started = clock.Elapsed.TotalMilliseconds; pendingFrame = started;
-            var key = actions % 5 == 0 ? Key.Space : actions / 100 % 2 == 0 ? Key.Right : Key.Left;
-            Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = Surface });
-            Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyUpEvent, Key = key, Source = Surface });
-            feedback.Add(clock.Elapsed.TotalMilliseconds - started); pendingPhoto = current?.Photo.Path;
-            probe.InvalidateVisual(); actions++;
-        };
-        timer.Start();
+            catch (Exception e) { sampling.Stop(); await Write(new { error = e.ToString(), actions = completed, folder = FolderStatus.Text }); }
+            CancelPending(); Close();
+        }
+        Task Write(object result) => Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!); File.WriteAllText(output, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })); });
+        int OptionInt(string key, int fallback) { var index = Array.IndexOf(arguments, key); return index >= 0 && index + 1 < arguments.Length ? int.Parse(arguments[index + 1]) : fallback; }
         static object Summary(List<double> values)
         {
-            values.Sort();
-            double? Percentile(double p) => values.Count == 0 ? null : values[Math.Min(values.Count - 1, (int)Math.Ceiling(values.Count * p) - 1)];
+            values.Sort(); double? Percentile(double p) => values.Count == 0 ? null : values[Math.Min(values.Count - 1, (int)Math.Ceiling(values.Count * p) - 1)];
             return new { count = values.Count, p50Ms = Percentile(.5), p95Ms = Percentile(.95), p99Ms = Percentile(.99), maxMs = values.Count == 0 ? (double?)null : values[^1] };
         }
     }

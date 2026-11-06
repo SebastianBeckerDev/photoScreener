@@ -15,7 +15,7 @@ public sealed class ThumbnailView : Image
         DetachedFromVisualTree += (_, _) => Clear();
         DataContextChanged += (_, _) => { Clear(); if (this.GetVisualRoot() != null) Load(); };
     }
-    private void Clear() { request++; Source = null; lease?.Dispose(); lease = null; }
+    private void Clear() { request++; this.FindAncestorOfType<MainWindow>()?.Images.CancelThumbnail(this); Source = null; lease?.Dispose(); lease = null; }
     private void Load()
     {
         if (DataContext is not PhotoRow row || this.FindAncestorOfType<MainWindow>() is not { } window) return;
@@ -24,6 +24,6 @@ public sealed class ThumbnailView : Image
         {
             if (version != request || DataContext != row || this.GetVisualRoot() == null) { result?.Dispose(); return; }
             Source = null; lease?.Dispose(); lease = result; Source = result?.Bitmap;
-        }, DispatcherPriority.Background)));
+        }, DispatcherPriority.Background), this));
     }
 }

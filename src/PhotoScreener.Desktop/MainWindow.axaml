@@ -5,33 +5,47 @@
     <Border Background="#1C2028" Padding="12,8">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
-          <Button Name="OpenButton" Content="Open folder" />
-          <Button Name="TargetButton" Content="Export target" />
-          <Button Name="RefreshButton" Content="Refresh" />
-          <ComboBox Name="FilterBox" Width="120" SelectedIndex="0"><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
-          <Button Name="ProjectPickedButton" Content="Project picks" />
+          <Button Name="OpenButton" Content="Open folder" ToolTip.Tip="Choose a folder of original JPEG or PNG photos to review." />
+          <Button Name="FoldersButton" Content="Folders" ToolTip.Tip="Show or hide the folder list to navigate within the current project." />
+          <Button Name="TargetButton" Content="Export target" ToolTip.Tip="Choose where this folder's picked photos are copied. Each folder normally uses its own export subfolder; your choice stays with this folder for the session." />
+          <Button Name="RefreshButton" Content="Refresh" ToolTip.Tip="Rescan the current source and export folders to check for added, changed or removed photos." />
+          <ComboBox Name="FilterBox" Width="120" SelectedIndex="0" ToolTip.Tip="Show all photos, only picked photos, or only unpicked photos in the current folder."><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
+          <Button Name="ProjectPickedButton" Content="Project picks" ToolTip.Tip="Show picked photos across the current project, using each folder's own export target. Results appear as folders are scanned." />
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
-          <Button Name="StripButton" Content="Strip" /><Button Name="RetryButton" Content="Retry" /><Button Name="CancelButton" Content="Cancel pending" />
+          <Button Name="ZoomFitButton" Content="Fit" ToolTip.Tip="Reset zoom and show the complete photo. You can also double-click the photo. Use the mouse wheel to zoom around the pointer and drag to move a zoomed photo." />
+          <Button Name="StripButton" Content="Strip" ToolTip.Tip="Show or hide the thumbnail strip to give the preview more space." />
+          <Button Name="WorkButton" Content="Work" ToolTip.Tip="Show or hide pending and failed pick or unpick changes. Select an entry to review that photo." />
+          <Button Name="RetryButton" Content="Retry" ToolTip.Tip="Retry the current photo's failed export change or association check. If an old export matches different original names, choose its owner first." />
+          <Button Name="CancelButton" Content="Cancel pending" ToolTip.Tip="Cancel unfinished pick and unpick requests. Changes already completed on disk remain in place; original photos are preserved." />
         </StackPanel>
         <TextBlock Name="Counts" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#BCC5D4" />
       </DockPanel>
     </Border>
-    <Border Grid.Row="1" Name="ReviewSurface" Focusable="True" Background="#0A0C10">
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+    <Border Name="FoldersPanel" IsVisible="False" Width="220" Background="#171A21" Padding="8">
+      <DockPanel><TextBlock DockPanel.Dock="Top" Text="Project folders" FontWeight="SemiBold" Margin="4,4,4,8" /><ListBox Name="FolderList"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel>
+    </Border>
+    <Border Grid.Column="1" Name="ReviewSurface" Focusable="True" Background="#0A0C10">
       <Grid>
-        <Image Name="Preview" Stretch="Uniform" Margin="8" />
+        <local:ZoomImage Name="Preview" Margin="8" />
+        <Border Margin="16" Padding="7,4" CornerRadius="4" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#CC111318" IsHitTestVisible="False"><TextBlock Name="ZoomStatus" Text="Fit" Foreground="#DCE3EC" /></Border>
         <TextBlock Name="PreviewMessage" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#A6B0C0" FontSize="18" Text="Open a folder to begin reviewing" />
+        <Border Name="WorkPanel" IsVisible="False" Background="#EE1C2028" Width="340" HorizontalAlignment="Right" Padding="12">
+          <DockPanel><TextBlock DockPanel.Dock="Top" Text="Pending and failed changes" Margin="0,0,0,8" FontWeight="SemiBold" /><ListBox Name="WorkList"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="11" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel>
+        </Border>
       </Grid>
     </Border>
+    </Grid>
     <Border Grid.Row="2" Background="#1C2028" Padding="12,7">
       <DockPanel><TextBlock Name="CurrentStatus" DockPanel.Dock="Right" Foreground="#8FDBB4" /><TextBlock Name="CurrentName" FontWeight="SemiBold" /></DockPanel>
     </Border>
     <Grid Grid.Row="3" RowDefinitions="Auto,Auto">
-      <ListBox Name="Filmstrip" Height="145" Background="#171A21" SelectionMode="Single">
+      <ListBox Name="Filmstrip" Height="145" Background="#171A21" SelectionMode="Single" AutoScrollToSelectedItem="False" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
         <ListBox.ItemTemplate><DataTemplate><StackPanel Width="132" Spacing="3"><local:ThumbnailView Width="128" Height="88" /><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><TextBlock Text="{Binding Status}" FontSize="10" Foreground="#8FDBB4" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
       </ListBox>
-      <DockPanel Grid.Row="1" Margin="12,4"><TextBlock Name="FolderStatus" TextTrimming="CharacterEllipsis" /><TextBlock DockPanel.Dock="Right" Text="← → Navigate   ·   Space Pick / unpick" Foreground="#8B96A8" FontSize="11" /></DockPanel>
+      <DockPanel Grid.Row="1" Margin="12,4"><TextBlock DockPanel.Dock="Right" Text="← → Navigate · Space Pick / unpick · Wheel Zoom · Drag Move · Double-click Fit" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="FolderStatus" TextTrimming="CharacterEllipsis" /></DockPanel>
     </Grid>
   </Grid>
 </Window>

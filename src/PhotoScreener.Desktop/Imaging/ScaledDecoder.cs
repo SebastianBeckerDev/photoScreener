@@ -29,24 +29,21 @@ public static class ScaledDecoder
             var swapped = (int)codec.EncodedOrigin >= 5;
             var width = Math.Max(1, (int)Math.Round((swapped ? original.Height : original.Width) * ratio));
             var height = Math.Max(1, (int)Math.Round((swapped ? original.Width : original.Height) * ratio));
-            using var oriented = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
-            using (var canvas = new SKCanvas(oriented))
+            var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+            try
             {
+                using var framebuffer = bitmap.Lock();
+                using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul), framebuffer.Address, framebuffer.RowBytes)
+                    ?? throw new InvalidDataException("Preview surface allocation failed.");
+                var canvas = surface.Canvas;
                 canvas.Scale((float)width / (swapped ? size.Height : size.Width), (float)height / (swapped ? size.Width : size.Height));
                 canvas.SetMatrix(SKMatrix.Concat(canvas.TotalMatrix, Orientation(codec.EncodedOrigin, size.Width, size.Height)));
                 using var paint = new SKPaint { FilterQuality = SKFilterQuality.High, IsAntialias = false };
                 canvas.DrawBitmap(decoded, 0, 0, paint);
+                canvas.Flush(); token.ThrowIfCancellationRequested();
+                return bitmap;
             }
-            token.ThrowIfCancellationRequested();
-            var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
-            using var framebuffer = bitmap.Lock();
-            var bytes = new byte[width * 4];
-            for (var y = 0; y < height; y++)
-            {
-                System.Runtime.InteropServices.Marshal.Copy(oriented.GetPixels() + y * oriented.RowBytes, bytes, 0, bytes.Length);
-                System.Runtime.InteropServices.Marshal.Copy(bytes, 0, framebuffer.Address + y * framebuffer.RowBytes, bytes.Length);
-            }
-            return bitmap;
+            catch { bitmap.Dispose(); throw; }
         }
         finally { if (large) LargeDecode.Release(); }
     }

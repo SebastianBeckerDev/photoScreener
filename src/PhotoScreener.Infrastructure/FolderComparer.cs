@@ -16,9 +16,23 @@ public sealed class FolderComparer : IFolderComparer
     private readonly Dictionary<string, string> hashes = [];
     private readonly Queue<string> hashOrder = [];
     private readonly HashSet<string> previouslyAvailable = new(PathGuard.Comparer);
+    private readonly HashSet<string> protectedDirectoryIdentities = [];
+    private string[] protectedDirectorySnapshot = [];
+    public IReadOnlyList<string> ProtectedDirectoryIdentities { get { lock (gate) return protectedDirectorySnapshot; } }
+    public void ProtectSource(Photo photo)
+    {
+        lock (gate)
+        {
+            var changed = false;
+            foreach (var identity in photo.SourceDirectoryIdentities) changed |= protectedDirectoryIdentities.Add(identity);
+            if (changed) protectedDirectorySnapshot = protectedDirectoryIdentities.ToArray();
+        }
+    }
     // Explicit choices resolve natural dotted-name ownership; exports remain authoritative bytes.
     public Dictionary<string, string> ExplicitOwners { get; } = new(PathGuard.Comparer);
     public Func<bool>? ForegroundPending { get; set; }
+    private long hashReadBytes;
+    public long HashReadBytes => Interlocked.Read(ref hashReadBytes);
     private static string Key(string name, long length) => name.ToUpperInvariant() + "|" + length;
     public ExportIndex Index(ExportBinding binding, CancellationToken token)
     {
@@ -26,6 +40,11 @@ public sealed class FolderComparer : IFolderComparer
         try
         {
             PathGuard.ValidateBinding(binding, [binding.SourceFolder]);
+            if (Directory.Exists(binding.ExportRoot))
+            {
+                var directoryIdentity = PlatformFileSystem.DirectoryIdentity(binding.ExportRoot);
+                lock (gate) if (protectedDirectoryIdentities.Contains(directoryIdentity)) throw new IOException("Export root aliases a known source directory or ancestor, including a moved source.");
+            }
             if (!Directory.Exists(binding.SourceFolder)) throw new IOException("Source folder unavailable.");
             if (!Directory.Exists(binding.ExportRoot))
             {
@@ -59,15 +78,19 @@ public sealed class FolderComparer : IFolderComparer
         if (index.Error != null) return new(PickStatus.Unavailable, [], Error: index.Error);
         try
         {
-            if (PathGuard.Revision(photo.Path) != photo.Revision) return new(PickStatus.Outdated, [], Error: "Source revision changed; Refresh to review its current version.");
-            if (!index.Candidates.TryGetValue(Key(photo.Name, photo.Revision.Length), out var entries)) return new(PickStatus.Unpicked, []);
+            var currentRevision = PathGuard.Revision(photo.Path);
+            index.Candidates.TryGetValue(Key(photo.Name, photo.Revision.Length), out var entries);
+            if (entries?.Any(entry => entry.Revision.Identity == currentRevision.Identity) == true)
+                throw new IOException("An export aliases its source; it cannot be associated for deletion.");
+            if (currentRevision != photo.Revision) return new(PickStatus.Outdated, [], Error: "Source revision changed; Refresh to review its current version.");
+            if (entries == null) return new(PickStatus.Unpicked, []);
             var digest = Hash(photo.Path, photo.Revision, token); var copies = new List<AssociatedCopy>(); var mismatched = false;
             foreach (var entry in entries)
             {
                 token.ThrowIfCancellationRequested();
                 PathGuard.ValidateExportFile(entry.Path, index.Binding);
                 if (PathGuard.Revision(entry.Path) != entry.Revision) throw new IOException("Export changed during comparison; retry.");
-                using (var handle = File.OpenRead(entry.Path))
+                using (var handle = PlatformFileSystem.OpenReadCandidate(entry.Path))
                 {
                     var identity = PlatformFileSystem.Identity(handle.SafeFileHandle, out var links);
                     if (identity == photo.Revision.Identity || links > 1) throw new IOException("An export aliases another file; it cannot be associated for deletion.");
@@ -93,24 +116,30 @@ public sealed class FolderComparer : IFolderComparer
     }
     public string Hash(string path, PhotoRevision revision, CancellationToken token)
     {
+        using var background = PlatformFileSystem.BackgroundWork();
         var key = path + "|" + revision;
-        lock (gate) if (hashes.TryGetValue(key, out var cached) && PathGuard.Revision(path) == revision) return cached;
+        string? cached; lock (gate) hashes.TryGetValue(key, out cached);
+        if (revision.ChangeToken != null && cached != null && PathGuard.Revision(path) == revision) return cached;
         PathGuard.ValidateNoLinks(path);
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.SequentialScan);
-        if (PathGuard.Revision(path) != revision) throw new IOException("File changed before verification.");
+        using var stream = PlatformFileSystem.OpenOwned(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024);
+        if (PlatformFileSystem.Identity(stream.SafeFileHandle, out _) != revision.Identity || PathGuard.Revision(path) != revision) throw new IOException("File changed before verification.");
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256); var buffer = new byte[1024 * 1024];
         int read;
         while ((read = stream.Read(buffer)) > 0)
         {
             token.ThrowIfCancellationRequested(); sha.AppendData(buffer, 0, read);
+            Interlocked.Add(ref hashReadBytes, read);
             if (ForegroundPending?.Invoke() == true) Thread.Yield();
         }
         if (PathGuard.Revision(path) != revision) throw new IOException("File changed during verification.");
         var digest = Convert.ToHexString(sha.GetHashAndReset());
         lock (gate)
         {
-            if (!hashes.ContainsKey(key)) hashOrder.Enqueue(key);
-            hashes[key] = digest;
+            if (revision.ChangeToken != null)
+            {
+                if (!hashes.ContainsKey(key)) hashOrder.Enqueue(key);
+                hashes[key] = digest;
+            }
             while (hashOrder.Count > 4096) hashes.Remove(hashOrder.Dequeue());
         }
         return digest;

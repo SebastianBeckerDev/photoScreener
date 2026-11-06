@@ -4,5 +4,6 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <ProjectReference Include="../../src/PhotoScreener.Infrastructure/PhotoScreener.Infrastructure.csproj" />
+    <ProjectReference Include="../../tools/PhotoScreener.FaultHarness/PhotoScreener.FaultHarness.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

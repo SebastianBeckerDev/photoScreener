@@ -2,8 +2,14 @@ namespace PhotoScreener.Core;
 
 public enum PickStatus { Checking, Picked, Unpicked, Copying, Removing, Error, Outdated, Unavailable, Ambiguous }
 public enum ReviewFilter { All, Picked, Unpicked }
-public sealed record PhotoRevision(long Length, long ModifiedTicks, string Identity);
-public sealed record Photo(string Path, string Folder, string Name, PhotoRevision Revision);
+public sealed record PhotoRevision(long Length, long ModifiedTicks, string Identity)
+{
+    public string? ChangeToken { get; init; }
+}
+public sealed record Photo(string Path, string Folder, string Name, PhotoRevision Revision)
+{
+    public IReadOnlyList<string> SourceDirectoryIdentities { get; init; } = [];
+}
 public sealed record ExportBinding(string SourceFolder, string ExportRoot);
 public sealed record AssociatedCopy(string Path, PhotoRevision Revision, string Sha256);
 public sealed record Observation(PickStatus Status, IReadOnlyList<AssociatedCopy> Copies, string? Sha256 = null, string? Error = null)
@@ -27,6 +33,8 @@ public sealed class PickIntent
     }
     public void Observe(bool? picked)
     {
+        // Unavailable storage retains the last confirmed observation; it does not establish empty.
+        if (!picked.HasValue) return;
         var wasPending = Pending;
         Observed = picked;
         if (!Requested.HasValue && picked.HasValue)

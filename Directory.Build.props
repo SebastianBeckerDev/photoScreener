@@ -1,6 +1,7 @@
 <Project>
-  <PropertyGroup Condition="'$(MSBuildProjectDirectory)' != '$(MSBuildThisFileDirectory)PhotoScreener'">
+  <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;osx-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

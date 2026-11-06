@@ -12,8 +12,9 @@ public sealed class PhotoRow(Photo photo, ExportBinding binding) : ObservableObj
     public string Status => error ?? (Intent.UnknownParity ? "Checking · change queued" : Intent.Pending ? Intent.Requested == true ? "Copying…" : "Removing…" : Observation.Status.ToString());
     public bool? Picked => Intent.Observed;
     private string? error;
+    public event Action<PhotoRow, bool?, bool?>? PickedChanged;
     public void Toggle(long sequence) { error = null; Intent.Toggle(sequence); Notify(); }
-    public void Observe(Observation observation) { Observation = observation; Intent.Observe(observation.Picked); error = observation.Error; Notify(); }
+    public void Observe(Observation observation) { var old = Picked; Observation = observation; Intent.Observe(observation.Picked); error = observation.Error == null ? null : observation.Status + " · " + observation.Error; if (old != Picked) PickedChanged?.Invoke(this, old, Picked); Notify(); }
     public void Fail(string message) { error = "Error · " + message; Notify(); }
     public void Notify() { OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Picked)); }
 }

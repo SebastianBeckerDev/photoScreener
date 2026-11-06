@@ -12,42 +12,67 @@ using PhotoScreener.Infrastructure;
 namespace PhotoScreener.Desktop;
 public partial class MainWindow : Window
 {
-    public PreviewScheduler Images { get; } = new();
+    public PreviewScheduler Images { get; }
     public long ImageContext { get; private set; }
     private readonly ExportBindingResolver bindings = new();
     private readonly Dictionary<string, ObservableCollection<PhotoRow>> folders = new(PathGuard.Comparer);
+    private readonly HashSet<string> completeFolders = new(PathGuard.Comparer);
     private readonly ObservableCollection<PhotoRow> rows = [];
     private readonly SourceCatalog catalog = new();
     private CancellationTokenSource loading = new();
     private ImageLease? previewLease;
     private PhotoRow? current;
     private string? activeFolder;
-    private long focusGeneration, sequence;
-    private bool spaceDown, applyingSelection, closing, projectView;
+    private long focusGeneration, sequence, interactionGeneration;
+    private PhotoRow? scrollRequest;
+    private bool scrollPosted;
+    private bool spaceDown, applyingSelection, closing, projectView, revealing;
     private ReviewFilter filter;
     private readonly string[] arguments;
+    private readonly SessionSettingsStore? sessionSettings;
+    private long folderOpenRequest;
     private ListBox Strip => this.FindControl<ListBox>("Filmstrip")!;
     private Control Surface => this.FindControl<Control>("ReviewSurface")!;
     private void Text(string name, string value) => this.FindControl<TextBlock>(name)!.Text = value;
     public MainWindow() : this([]) { }
-    public MainWindow(string[] args)
+    public MainWindow(string[] args, SessionSettingsStore? settings = null)
     {
         arguments = args;
+        sessionSettings = args.Contains("--benchmark") ? null : settings;
+        var cacheOption = args.Contains("--benchmark") ? Array.IndexOf(args, "--cache-dir") : -1;
+        Images = new(cacheOption >= 0 && cacheOption + 1 < args.Length ? args[cacheOption + 1] : null);
         InitializeComponent();
+        comparer.ForegroundPending = () => Images.ForegroundPending; mutations = CreateMutations();
+        InitializeReconciliation();
         Strip.ItemsSource = rows;
+        Preview.AddHandler(PointerPressedEvent, (_, _) => Surface.Focus(), handledEventsToo: true);
+        Preview.ZoomChanged += () => { Text("ZoomStatus", Preview.Zoom == 1 ? "Fit" : $"{Preview.Zoom * 100:0}% of fit"); RequestPreview(true); };
+        this.FindControl<Button>("ZoomFitButton")!.Click += (_, _) => { Preview.ResetView(true); Surface.Focus(); };
         this.FindControl<Button>("OpenButton")!.Click += async (_, _) => await ChooseSource();
         this.FindControl<Button>("TargetButton")!.Click += async (_, _) => await ChooseTarget();
         this.FindControl<Button>("RefreshButton")!.Click += async (_, _) => { if (activeFolder != null) await OpenFolder(activeFolder, true); Surface.Focus(); };
         this.FindControl<Button>("StripButton")!.Click += (_, _) => { Strip.IsVisible = !Strip.IsVisible; Surface.Focus(); };
+        this.FindControl<Button>("WorkButton")!.Click += (_, _) => { WorkPanel.IsVisible = !WorkPanel.IsVisible; Surface.Focus(); };
+        WorkList.ItemsSource = operationRows;
+        FolderList.ItemsSource = folderEntries;
+        FoldersButton.Click += (_, _) => { FoldersPanel.IsVisible = !FoldersPanel.IsVisible; Surface.Focus(); };
+        FolderList.SelectionChanged += async (_, _) => { if (FolderList.SelectedItem is FolderEntry entry) await OpenFolder(entry.Path); Surface.Focus(); };
+        WorkList.SelectionChanged += (_, _) => { if (WorkList.SelectedItem is PhotoRow row) { interactionGeneration++; filter = ReviewFilter.All; revealing = true; FilterBox.SelectedIndex = 0; revealing = false; ShowFolderRows(row.Photo.Folder, row); FocusPhoto(row); Surface.Focus(); } };
         this.FindControl<Button>("ProjectPickedButton")!.Click += (_, _) => ShowProjectPicks();
-        this.FindControl<Button>("RetryButton")!.Click += (_, _) => { if (current != null) RequestMutation(current); Surface.Focus(); };
+        this.FindControl<Button>("RetryButton")!.Click += async (_, _) => { if (current != null) { if (current.Observation.Status == PhotoScreener.Core.PickStatus.Ambiguous) await ResolveOwnership(current); else RequestMutation(current); } Surface.Focus(); };
         this.FindControl<Button>("CancelButton")!.Click += (_, _) => CancelPending();
         this.FindControl<ComboBox>("FilterBox")!.SelectionChanged += (_, _) =>
         {
             filter = (ReviewFilter)this.FindControl<ComboBox>("FilterBox")!.SelectedIndex;
-            ApplyFilter(); Surface.Focus();
+            if (!revealing)
+            {
+                interactionGeneration++;
+                if (projectView && filter != ReviewFilter.Picked && current != null) ShowFolderRows(current.Photo.Folder, current);
+                ApplyFilter();
+            }
+            Surface.Focus();
         };
-        Strip.SelectionChanged += (_, _) => { if (!applyingSelection && Strip.SelectedItem is PhotoRow row) { FocusPhoto(row); Surface.Focus(); } };
+        Strip.SelectionChanged += (_, _) => { if (!applyingSelection && Strip.SelectedItem is PhotoRow row) { interactionGeneration++; FocusPhoto(row); Surface.Focus(); } };
         AddHandler(KeyDownEvent, HandleKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, (_, e) => { if (e.Key == Key.Space) spaceDown = false; }, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => spaceDown = false;
@@ -56,59 +81,131 @@ public partial class MainWindow : Window
         {
             if (closing) return;
             e.Cancel = true; closing = true;
-            loading.Cancel(); focusGeneration++; ImageContext++; Images.SetContext(ImageContext, []);
             await DrainOperations();
+            await FlushLastFolder();
+            if (operationRows.Any(r => r.Status.StartsWith("Error", StringComparison.Ordinal)))
+            {
+                var decision = await ChooseFailedChanges("Some export changes failed. Completed files are safe; choose how to handle the failed requests.");
+                if (decision != "Cancel and close")
+                {
+                    closing = false;
+                    if (decision == "Retry") foreach (var row in operationRows.ToArray()) RequestMutation(row);
+                    RequestPreview(); return;
+                }
+                CancelPending();
+            }
+            loading.Cancel(); focusGeneration++; ImageContext++; Images.SetContext(ImageContext, []); reconcileTimer?.Stop();
+            if (comparisons != null) await comparisons.DisposeAsync();
+            if (mutations != null) await mutations.DisposeAsync();
+            libraryContext.Cancel(); pickedContext.Cancel();
+            if (library != null) await library.DisposeAsync();
+            if (projectPicks != null) await projectPicks.DisposeAsync();
+            watchers.Dispose();
             Preview.Source = null; previewLease?.Dispose(); previewLease = null;
             await Images.DisposeAsync(); Close();
         };
         Opened += async (_, _) =>
         {
             Surface.Focus();
-            if (args.FirstOrDefault(a => !a.StartsWith("--")) is { } source) await OpenFolder(source);
+            // Window initialization can assign the first toolbar control after Opened.
+            // Restore review focus once that initial layout/focus work has finished.
+            Dispatcher.UIThread.Post(() => { if (!closing) Surface.Focus(); }, DispatcherPriority.Loaded);
             if (args.Contains("--benchmark")) StartBenchmark();
+            if (args.FirstOrDefault(a => !a.StartsWith("--")) is { } source)
+            {
+                var exportOption = Array.IndexOf(args, "--export");
+                if (exportOption >= 0 && exportOption + 1 < args.Length)
+                    await Task.Run(() => bindings.Bind(source, args[exportOption + 1], [source]));
+                await OpenFolder(source);
+            }
+            else await RestoreLastFolder();
         };
     }
     private async Task ChooseSource()
     {
         var selected = await StorageProvider.OpenFolderPickerAsync(new() { Title = "Choose photo folder", AllowMultiple = false });
-        if (selected.FirstOrDefault()?.TryGetLocalPath() is { } path) await OpenFolder(path);
+        if (selected.FirstOrDefault()?.TryGetLocalPath() is { } path)
+        {
+            if (projectRoot != null && !PathGuard.Within(path, projectRoot))
+            {
+                await DrainOperations();
+                if (operationRows.Any(r => r.Status.StartsWith("Error", StringComparison.Ordinal)))
+                {
+                    if (await ChooseFailedChanges("Finish or cancel failed changes before opening a different project.") != "Cancel and close") return;
+                    CancelPending();
+                }
+            }
+            await OpenFolder(path);
+        }
         Surface.Focus();
     }
     private async Task ChooseTarget()
     {
         if (activeFolder == null) return;
+        var capturedFolder = activeFolder;
         var selected = await StorageProvider.OpenFolderPickerAsync(new() { Title = "Choose this folder's export target", AllowMultiple = false });
         if (selected.FirstOrDefault()?.TryGetLocalPath() is { } target)
         {
-            try { await DrainOperations(); bindings.Bind(activeFolder, target, folders.Keys); await OpenFolder(activeFolder, true); }
+            try
+            {
+                await DrainOperations();
+                if (operationRows.Any(r => r.Photo.Folder == capturedFolder && r.Status.StartsWith("Error", StringComparison.Ordinal)))
+                {
+                    if (await ChooseFailedChanges("Finish or cancel this folder's failed changes before changing its export target.") != "Cancel and close") return;
+                    CancelPending();
+                }
+                var protectedFolders = folders.Keys.ToArray();
+                await Task.Run(() => bindings.Bind(capturedFolder, target, protectedFolders));
+                await OpenFolder(capturedFolder, true);
+            }
             catch (Exception e) { Text("FolderStatus", e.Message); }
         }
         Surface.Focus();
     }
     public async Task OpenFolder(string folder, bool refresh = false)
     {
+        var request = ++folderOpenRequest;
+        var canonical = PathGuard.Canonical(folder);
+        var excluded = await Task.Run(() => bindings.Excluded(canonical));
+        if (request != folderOpenRequest || closing) return;
+        if (excluded) { Text("FolderStatus", "Export folders are excluded from source review. Choose the original source folder."); return; }
         loading.Cancel(); loading.Dispose(); loading = new();
         var token = loading.Token; var context = ++ImageContext;
-        activeFolder = PathGuard.Canonical(folder); projectView = false;
+        pendingRestore = null; comparisonCompletedContext = -1;
+        activeFolder = canonical; projectView = false;
+        mutations?.RegisterBinding(bindings.Resolve(canonical));
+        pickedContext.Cancel(); projectGeneration++;
+        DiscoverProject(activeFolder);
         rows.Clear(); ClearFocus(); filter = ReviewFilter.All;
         this.FindControl<ComboBox>("FilterBox")!.SelectedIndex = 0;
+        // SelectionChanged does not run when All was already selected. Folder loading
+        // must establish keyboard focus independently, before the first photo arrives.
+        Surface.Focus();
+        var folderInteraction = interactionGeneration;
         Images.SetContext(context, []);
         Text("FolderStatus", activeFolder + " · discovering…");
-        if (!refresh && folders.TryGetValue(activeFolder, out var warm))
+        if (!refresh && completeFolders.Contains(activeFolder) && folders.TryGetValue(activeFolder, out var warm))
         {
-            foreach (var row in warm) rows.Add(row);
-            if (rows.Count > 0) FocusPhoto(rows[0]);
+            foreach (var row in warm) { RegisterRow(row); rows.Add(row); }
+            if (rows.Count > 0) FocusPhoto(rows.FirstOrDefault(r => cursors.GetValueOrDefault(activeFolder) == r.Photo.Path) ?? rows[0]);
             Images.SetWarmPhotos(rows.Select(r => r.Photo).ToArray());
-            BeginComparison(warm, context); return;
+            RememberLastFolder(activeFolder);
+            BeginComparison(warm, context); ReadMetadataAndWatch(bindings.Resolve(activeFolder), context, folderInteraction); return;
         }
         var captured = activeFolder;
+        completeFolders.Remove(captured);
+        var preferredCursor = cursors.GetValueOrDefault(captured);
+        foreach (var previous in registered.Values.Where(r => PathGuard.Comparer.Equals(r.Photo.Folder, captured)).ToArray())
+        { registered.Remove(previous.Photo.Path); foreach (var group in associations.Values) group.Remove(previous); }
+        counts[captured] = (0, 0, 0);
         var collection = new ObservableCollection<PhotoRow>(); folders[captured] = collection;
+        var remembered = false;
         try
         {
-            var binding = bindings.Resolve(captured);
+            var binding = bindings.Resolve(captured); var protectedFolders = folders.Keys.ToArray();
             await Task.Run(async () =>
             {
-                PathGuard.ValidateBinding(binding, folders.Keys.ToArray());
+                PathGuard.ValidateBinding(binding, protectedFolders);
                 var batch = new List<PhotoRow>(32);
                 foreach (var photo in catalog.Enumerate(captured, token))
                 {
@@ -121,16 +218,21 @@ public partial class MainWindow : Window
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         if (token.IsCancellationRequested || context != ImageContext) return;
-                        foreach (var row in discovered) { collection.Add(row); rows.Add(row); }
+                        foreach (var row in discovered) { collection.Add(row); RegisterRow(row); rows.Add(row); }
+                        if (!remembered) { remembered = true; RememberLastFolder(captured); }
                         if (current == null && rows.Count > 0) FocusPhoto(rows[0]);
+                        if (preferredCursor != null && discovered.FirstOrDefault(r => PathGuard.Comparer.Equals(r.Photo.Path, preferredCursor)) is { } preferred) FocusPhoto(preferred);
                         UpdateCounts();
                     }, DispatcherPriority.Background);
                 }
             }, token);
             if (context != ImageContext) return;
+            completeFolders.Add(captured);
+            if (!remembered) RememberLastFolder(captured);
             Images.SetWarmPhotos(collection.Select(r => r.Photo).ToArray());
             Text("FolderStatus", captured + " → " + binding.ExportRoot + " · review history Unknown");
             BeginComparison(collection, context);
+            ReadMetadataAndWatch(binding, context, folderInteraction);
         }
         catch (OperationCanceledException) { }
         catch (Exception e) { if (context == ImageContext) Text("FolderStatus", "Unavailable · " + e.Message + " · Retry or choose source"); }
@@ -143,86 +245,115 @@ public partial class MainWindow : Window
         {
             e.Handled = true; if (spaceDown) return; spaceDown = true;
             if (current == null) return;
+            interactionGeneration++;
             current.Toggle(++sequence); Text("CurrentStatus", current.Status);
             if (projectView || filter != ReviewFilter.All)
             {
-                projectView = false; filter = ReviewFilter.All;
-                this.FindControl<ComboBox>("FilterBox")!.SelectedIndex = 0;
+                filter = ReviewFilter.All;
+                revealing = true; this.FindControl<ComboBox>("FilterBox")!.SelectedIndex = 0; revealing = false;
                 ShowFolderRows(current.Photo.Folder, current);
             }
-            RequestMutation(current); UpdateCounts();
+            Timed("mutation-request", () => RequestMutation(current)); Timed("review-metadata-request", () => RecordReview(current)); Timed("counts", UpdateCounts);
         }
     }
     private void Navigate(int direction)
     {
         if (current == null) return;
+        interactionGeneration++;
         var index = rows.IndexOf(current) + direction;
         while (index >= 0 && index < rows.Count)
         {
-            if (ReviewRules.Matches(filter, rows[index].Picked)) { FocusPhoto(rows[index]); return; }
+            if (ReviewRules.Matches(filter, rows[index].Picked)) { RecordReview(current, rows[index]); FocusPhoto(rows[index]); return; }
             index += direction;
         }
     }
     private void FocusPhoto(PhotoRow row)
     {
+        if (current?.Photo != row.Photo) { Preview.ResetView(); Text("ZoomStatus", "Fit"); }
         current = row; focusGeneration++;
         Text("CurrentName", row.Name); Text("CurrentStatus", row.Status);
-        applyingSelection = true; Strip.SelectedItem = row; Strip.ScrollIntoView(row); applyingSelection = false;
-        RequestPreview();
+        applyingSelection = true; Timed("selection", () => Strip.SelectedItem = row); QueueStripScroll(row); applyingSelection = false;
+        Timed("preview-request", RequestPreview);
+        var index = rows.IndexOf(row);
+        Timed("prefetch-request", () => Images.Prefetch(new[] { index + 1, index - 1, index + 2, index - 2 }.Where(i => i >= 0 && i < rows.Count).Select(i => rows[i].Photo)));
     }
-    private void RequestPreview()
+    private void QueueStripScroll(PhotoRow row)
+    {
+        scrollRequest = row;
+        if (scrollPosted) return;
+        scrollPosted = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            scrollPosted = false;
+            var requested = scrollRequest; scrollRequest = null;
+            if (closing || requested == null || current != requested || !rows.Contains(requested)) return;
+            Timed("deferred-strip-scroll", () => Strip.ScrollIntoView(requested));
+        }, DispatcherPriority.Background);
+    }
+    private void RequestPreview() => RequestPreview(false);
+    private void RequestPreview(bool preserveCurrent)
     {
         if (current == null) return;
         var row = current; var focus = ++focusGeneration; var context = ImageContext;
-        Preview.Source = null; previewLease?.Dispose(); previewLease = null;
-        Text("PreviewMessage", "Loading…");
-        var fullPublished = false;
+        if (!preserveCurrent) Timed("previous-preview-release", () => { Preview.Source = null; previewLease?.Dispose(); previewLease = null; });
+        if (previewLease == null) Text("PreviewMessage", "Loading…");
+        var fullPublished = preserveCurrent && previewLease != null;
         void Publish(ImageLease? lease, string? error, bool full) => Dispatcher.UIThread.Post(() =>
         {
             if (closing || focus != focusGeneration || context != ImageContext || current != row || !full && fullPublished)
             { lease?.Dispose(); return; }
-            if (lease == null) { if (previewLease == null) Text("PreviewMessage", error ?? "Preview unavailable"); return; }
+            if (lease == null) { if (previewLease == null) { Text("PreviewMessage", error ?? "Preview unavailable"); Images.ViewportReady(); } return; }
             if (full) fullPublished = true;
             Preview.Source = null; previewLease?.Dispose(); previewLease = lease; Preview.Source = lease.Bitmap;
             Text("PreviewMessage", ""); Images.ViewportReady();
             PreviewPublished?.Invoke(row, full);
         }, DispatcherPriority.Render);
-        var scaling = RenderScaling;
-        var side = Math.Clamp((int)(Math.Max(Preview.Bounds.Width, Preview.Bounds.Height) * scaling), 1024, 3840);
-        Images.Focus(new(row.Photo, 800, context, false, (lease, error) => Publish(lease, error, false)),
-            new(row.Photo, side, context, true, (lease, error) => Publish(lease, error, true)));
+        var side = PreviewSide();
+        FocusRequested?.Invoke(row, focus);
+        Timed("preview-queue", () => Images.Focus(new(row.Photo, 800, context, false, (lease, error) => Publish(lease, error, false)),
+            new(row.Photo, side, context, true, (lease, error) => Publish(lease, error, true))));
     }
+    private int PreviewSide() => Math.Clamp((int)(Math.Max(Surface.Bounds.Width, Surface.Bounds.Height) * RenderScaling * Preview.Zoom), 1024, 3840);
     private void ClearFocus()
     {
+        Preview.ResetView(); Text("ZoomStatus", "Fit");
         current = null; focusGeneration++; Preview.Source = null; previewLease?.Dispose(); previewLease = null;
         Text("CurrentName", ""); Text("CurrentStatus", ""); Text("PreviewMessage", "No photos in this view");
     }
     private void ApplyFilter()
     {
-        var oldIndex = current == null ? 0 : rows.IndexOf(current);
-        var chosen = ReviewRules.ChooseAfterFilter(oldIndex, rows.Count, i => ReviewRules.Matches(filter, rows[i].Picked));
-        if (chosen < 0) ClearFocus(); else FocusPhoto(rows[chosen]);
-        // Hide rows via a new lightweight filtered view, retaining identity in the folder collection.
-        if (!projectView && activeFolder != null && folders.TryGetValue(activeFolder, out var folder))
-        {
-            var retain = current; rows.Clear(); foreach (var row in folder.Where(r => ReviewRules.Matches(filter, r.Picked))) rows.Add(row);
-            if (retain != null && rows.Contains(retain)) { applyingSelection = true; Strip.SelectedItem = retain; applyingSelection = false; }
-        }
+        var source = !projectView && activeFolder != null && folders.TryGetValue(activeFolder, out var folder) ? folder.ToArray() : rows.ToArray();
+        var oldIndex = current == null ? 0 : Array.IndexOf(source, current);
+        var chosen = ReviewRules.ChooseAfterFilter(oldIndex, source.Length, i => ReviewRules.Matches(filter, source[i].Picked));
+        applyingSelection = true; rows.Clear(); foreach (var row in source.Where(r => ReviewRules.Matches(filter, r.Picked))) rows.Add(row); applyingSelection = false;
+        if (chosen < 0) ClearFocus(); else FocusPhoto(source[chosen]);
         UpdateCounts();
     }
     private void ShowFolderRows(string folder, PhotoRow retain)
     {
-        activeFolder = folder; rows.Clear(); foreach (var row in folders[folder]) rows.Add(row);
-        current = retain; applyingSelection = true; Strip.SelectedItem = retain; Strip.ScrollIntoView(retain); applyingSelection = false;
+        var folderChanged = !PathGuard.Comparer.Equals(activeFolder, folder);
+        if (projectView) { pickedContext.Cancel(); projectGeneration++; }
+        projectView = false; activeFolder = folder;
+        applyingSelection = true; rows.Clear(); foreach (var row in folders[folder]) rows.Add(row);
+        current = retain; Strip.SelectedItem = retain; applyingSelection = false; QueueStripScroll(retain);
+        Images.SetWarmPhotos(folders[folder].Select(r => r.Photo).ToArray());
+        if (folderChanged) ReadMetadataAndWatch(retain.Binding, ImageContext, interactionGeneration);
     }
     private void ShowProjectPicks()
     {
         projectView = true; filter = ReviewFilter.Picked; rows.Clear();
-        foreach (var folder in folders.Values) foreach (var row in folder.Where(r => r.Picked == true)) rows.Add(row);
+        revealing = true; FilterBox.SelectedIndex = 1; revealing = false;
+        foreach (var folder in folders.Where(f => projectRoot == null || PathGuard.Within(f.Key, projectRoot)).Select(f => f.Value)) foreach (var row in folder.Where(r => r.Picked == true)) rows.Add(row);
         if (rows.Count > 0) FocusPhoto(rows[0]); else ClearFocus();
         Text("FolderStatus", "Project picks · discovered folders only · total discovery Unknown"); Surface.Focus(); UpdateCounts();
+        ScanProjectPicks();
     }
-    private void UpdateCounts() => Text("Counts", $"{rows.Count(r => r.Picked == true)} picked / {rows.Count} · {rows.Count(r => !r.Picked.HasValue)} checking");
+    private void UpdateCounts()
+    {
+        var projectCounts = projectView ? counts.Where(c => projectRoot == null || PathGuard.Within(c.Key, projectRoot)).Select(c => c.Value).ToArray() : [];
+        var count = projectView ? (projectCounts.Sum(c => c.Total), projectCounts.Sum(c => c.Picked), projectCounts.Sum(c => c.Checking)) : activeFolder != null ? counts.GetValueOrDefault(activeFolder) : (0, 0, 0);
+        Text("Counts", $"{count.Item2} picked / {count.Item1}{(projectView && !projectComplete ? "+" : "")} · {count.Item3} checking · {mutations?.PendingCount ?? 0} pending");
+    }
     // Extended by the comparison/mutation and performance slices.
     private partial void BeginComparison(ObservableCollection<PhotoRow> collection, long context);
     private partial void RequestMutation(PhotoRow row);
@@ -230,4 +361,12 @@ public partial class MainWindow : Window
     private partial Task DrainOperations();
     private partial void StartBenchmark();
     public event Action<PhotoRow, bool>? PreviewPublished;
+    public event Action<PhotoRow, long>? FocusRequested;
+    public event Action<string, double>? ActionSection;
+    private void Timed(string section, Action action)
+    {
+        if (ActionSection == null) { action(); return; }
+        var start = System.Diagnostics.Stopwatch.GetTimestamp(); action();
+        ActionSection.Invoke(section, System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+    }
 }

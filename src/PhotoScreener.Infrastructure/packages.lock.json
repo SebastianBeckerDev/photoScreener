@@ -5,6 +5,8 @@
       "photoscreener.core": {
         "type": "Project"
       }
-    }
+    },
+    "net10.0/osx-arm64": {},
+    "net10.0/win-x64": {}
   }
 }
