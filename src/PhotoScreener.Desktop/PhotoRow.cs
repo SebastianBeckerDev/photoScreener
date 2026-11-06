@@ -1,0 +1,19 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using PhotoScreener.Core;
+
+namespace PhotoScreener.Desktop;
+public sealed class PhotoRow(Photo photo, ExportBinding binding) : ObservableObject
+{
+    public Photo Photo { get; } = photo;
+    public ExportBinding Binding { get; } = binding;
+    public PickIntent Intent { get; } = new();
+    public Observation Observation { get; private set; } = new(PickStatus.Checking, []);
+    public string Name => Photo.Name;
+    public string Status => error ?? (Intent.UnknownParity ? "Checking · change queued" : Intent.Pending ? Intent.Requested == true ? "Copying…" : "Removing…" : Observation.Status.ToString());
+    public bool? Picked => Intent.Observed;
+    private string? error;
+    public void Toggle(long sequence) { error = null; Intent.Toggle(sequence); Notify(); }
+    public void Observe(Observation observation) { Observation = observation; Intent.Observe(observation.Picked); error = observation.Error; Notify(); }
+    public void Fail(string message) { error = "Error · " + message; Notify(); }
+    public void Notify() { OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Picked)); }
+}

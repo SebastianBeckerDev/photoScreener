@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:PhotoScreener.Desktop" x:Class="PhotoScreener.Desktop.MainWindow"
+        Title="Photo Screener · Rewrite" Width="1440" Height="900" MinWidth="740" MinHeight="480" Background="#111318">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
+    <Border Background="#1C2028" Padding="12,8">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
+          <Button Name="OpenButton" Content="Open folder" />
+          <Button Name="TargetButton" Content="Export target" />
+          <Button Name="RefreshButton" Content="Refresh" />
+          <ComboBox Name="FilterBox" Width="120" SelectedIndex="0"><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
+          <Button Name="ProjectPickedButton" Content="Project picks" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+          <Button Name="StripButton" Content="Strip" /><Button Name="RetryButton" Content="Retry" /><Button Name="CancelButton" Content="Cancel pending" />
+        </StackPanel>
+        <TextBlock Name="Counts" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#BCC5D4" />
+      </DockPanel>
+    </Border>
+    <Border Grid.Row="1" Name="ReviewSurface" Focusable="True" Background="#0A0C10">
+      <Grid>
+        <Image Name="Preview" Stretch="Uniform" Margin="8" />
+        <TextBlock Name="PreviewMessage" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#A6B0C0" FontSize="18" Text="Open a folder to begin reviewing" />
+      </Grid>
+    </Border>
+    <Border Grid.Row="2" Background="#1C2028" Padding="12,7">
+      <DockPanel><TextBlock Name="CurrentStatus" DockPanel.Dock="Right" Foreground="#8FDBB4" /><TextBlock Name="CurrentName" FontWeight="SemiBold" /></DockPanel>
+    </Border>
+    <Grid Grid.Row="3" RowDefinitions="Auto,Auto">
+      <ListBox Name="Filmstrip" Height="145" Background="#171A21" SelectionMode="Single">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.ItemTemplate><DataTemplate><StackPanel Width="132" Spacing="3"><local:ThumbnailView Width="128" Height="88" /><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><TextBlock Text="{Binding Status}" FontSize="10" Foreground="#8FDBB4" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      <DockPanel Grid.Row="1" Margin="12,4"><TextBlock Name="FolderStatus" TextTrimming="CharacterEllipsis" /><TextBlock DockPanel.Dock="Right" Text="← → Navigate   ·   Space Pick / unpick" Foreground="#8B96A8" FontSize="11" /></DockPanel>
+    </Grid>
+  </Grid>
+</Window>
