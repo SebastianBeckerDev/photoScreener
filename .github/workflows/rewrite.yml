@@ -13,7 +13,7 @@ jobs:
       - shell: pwsh
         run: ./scripts/Publish-Rewrite.ps1
   macos:
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: macos-15
     env:
       # /var is a symlink on macOS; filesystem fixtures require a physical path.
       TMPDIR: /private/tmp

@@ -43,6 +43,22 @@ public sealed class InterruptionTests
             var observed = comparer.Compare(photo, comparer.Index(binding, default), [photo], default);
             Assert.Equal(expectedPicked, observed.Picked); Assert.Equal("abc", File.ReadAllText(path));
         }
-        finally { if (!child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); } Directory.Delete(root, true); }
+        finally { if (!child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); } await RemoveFixture(root); }
+    }
+    private static async Task RemoveFixture(string root)
+    {
+        var absolute = PathGuard.Canonical(root);
+        if (!PathGuard.Comparer.Equals(Path.GetDirectoryName(absolute), PathGuard.Canonical(Path.GetTempPath())) || !Path.GetFileName(absolute).StartsWith("photoscreener-kill-", StringComparison.Ordinal))
+            throw new IOException("Refusing to remove a path outside this test's temporary fixture location.");
+        PathGuard.ValidateNoLinks(absolute);
+        var cleanup = Stopwatch.StartNew();
+        while (true)
+        {
+            try { Directory.Delete(absolute, true); return; }
+            // CI can retain a transient source read handle just after process exit.
+            // Retry only fixture disposal, never the recovery/source-safety assertions.
+            catch (IOException error) when (OperatingSystem.IsWindows() && (error.HResult & 0xffff) is 32 or 33 && cleanup.Elapsed < TimeSpan.FromSeconds(3))
+            { await Task.Delay(20); }
+        }
     }
 }
