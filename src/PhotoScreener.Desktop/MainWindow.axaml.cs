@@ -174,7 +174,18 @@ public partial class MainWindow : Window
     {
         var request = ++folderOpenRequest;
         var canonical = PathGuard.Canonical(folder);
-        var excluded = await Task.Run(() => bindings.Excluded(canonical));
+        var knownBindings = folders.Keys.Select(bindings.Resolve).ToArray();
+        bool excluded;
+        try
+        {
+            excluded = await Task.Run(() =>
+            {
+                BindingIdentityGuard.Validate(bindings.Resolve(canonical), knownBindings);
+                return bindings.Excluded(canonical);
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        { if (request == folderOpenRequest && !closing) Text("FolderStatus", "Unavailable · " + e.Message); return; }
         if (request != folderOpenRequest || closing) return;
         if (excluded) { Text("FolderStatus", "Export folders are excluded from source review. Choose the original source folder."); return; }
         loading.Cancel(); loading.Dispose(); loading = new();

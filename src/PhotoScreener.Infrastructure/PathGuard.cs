@@ -30,6 +30,7 @@ public static class PathGuard
     public static void ValidateBinding(ExportBinding binding, IEnumerable<string> protectedFolders)
     {
         ValidateNoLinks(binding.SourceFolder); ValidateNoLinks(binding.ExportRoot);
+        ValidateExportSpelling(binding.ExportRoot);
         var targetIdentity = Directory.Exists(binding.ExportRoot) ? PlatformFileSystem.DirectoryIdentity(binding.ExportRoot) : null;
         foreach (var folder in protectedFolders.Append(binding.SourceFolder).Distinct(Comparer))
         {
@@ -48,6 +49,11 @@ public static class PathGuard
             var component = Canonical(binding.ExportRoot)[9..].Split('/')[0];
             if (!Directory.Exists("/Volumes/" + component)) throw new IOException("Export volume is unavailable.");
         }
+    }
+    public static void ValidateExportSpelling(string path)
+    {
+        if (OperatingSystem.IsWindows() && path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(component => component.EndsWith('.') || component.EndsWith(' ')))
+            throw new IOException("Export paths ending a component with a dot or space are ambiguous on Windows. Choose the ordinary directory path.");
     }
     public static void ValidateExportFile(string path, ExportBinding binding)
     {

@@ -25,13 +25,20 @@ public sealed class LibraryWorker : IAsyncDisposable
                 var stack = new Stack<string>(); stack.Push(work.Root);
                 foreach (var known in work.BoundSources.Select(entry => entry.Photo.Folder).Distinct(PathGuard.Comparer))
                     if (PathGuard.Within(known, work.Root) && !PathGuard.Comparer.Equals(known, work.Root)) stack.Push(known);
-                var visited = new HashSet<string>(PathGuard.Comparer);
+                var visited = new Dictionary<string, string>(PathGuard.Comparer);
                 try
                 {
                     while (stack.TryPop(out var folder))
                     {
                         token.ThrowIfCancellationRequested();
-                        if (!visited.Add(folder)) continue;
+                        if (visited.TryGetValue(folder, out var previous))
+                        {
+                            try { BindingIdentityGuard.Validate(resolver.Resolve(folder), [resolver.Resolve(previous)]); }
+                            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                            { await work.Publish(new(folder, [], FolderDone: true, Error: e.Message)); }
+                            continue;
+                        }
+                        visited[folder] = folder;
                         if (resolver.Excluded(folder)) continue;
                         try
                         {

@@ -16,7 +16,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
     private readonly FolderComparer comparer;
     private readonly ExportStore store;
     private readonly Task worker;
-    private readonly Dictionary<string, ExportBinding> sourceBindings = new(PathGuard.Comparer);
+    private readonly Dictionary<string, ExportBinding> sourceBindings = new(StringComparer.Ordinal);
     private ExportBinding[] bindingSnapshot = [];
     private string[] sourceFolders = [];
     private bool sourceSnapshotDirty = true;
@@ -32,7 +32,18 @@ public sealed class MutationCoordinator : IAsyncDisposable
     public MutationCoordinator(FolderComparer comparer)
     { this.comparer = comparer; store = new(comparer); worker = Task.Run(Loop); }
     public void Register(IReadOnlyList<(Photo Photo, ExportBinding Binding)> photos) { foreach (var entry in photos) RegisterPhoto(entry.Photo, entry.Binding); }
-    public void RegisterBinding(ExportBinding binding) { lock (gate) { if (sourceBindings.GetValueOrDefault(binding.SourceFolder) == binding) return; sourceBindings[binding.SourceFolder] = binding; sourceSnapshotDirty = true; } }
+    public void RegisterBinding(ExportBinding binding)
+    {
+        lock (gate)
+        {
+            if (sourceBindings.GetValueOrDefault(binding.SourceFolder) == binding) return;
+            // Retain every spelling for native identity checks while keeping a changed
+            // binding current for ordinary case variants of the same Windows folder.
+            foreach (var spelling in sourceBindings.Keys.Where(folder => PathGuard.Comparer.Equals(folder, binding.SourceFolder)).ToArray())
+                sourceBindings[spelling] = binding with { SourceFolder = spelling };
+            sourceBindings[binding.SourceFolder] = binding; sourceSnapshotDirty = true;
+        }
+    }
     public void RegisterPhoto(Photo photo, ExportBinding binding) { comparer.ProtectSource(photo); RegisterBinding(binding); }
     public bool Submit(MutationRequest request)
     {
@@ -100,6 +111,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                 try
                 {
                     PathGuard.ValidateBinding(request.Binding, sourceFolders);
+                    BindingIdentityGuard.Validate(request.Binding, knownBindings);
                     // Files are authoritative even if a watcher/Refresh has not run.
                     var index = comparer.Index(request.Binding, token);
                     var sameTarget = AssociationSources.Read(request.Photo, index, knownBindings, token);
@@ -124,7 +136,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                     {
                         if (!writers.ContainsKey(request.Binding.ExportRoot))
                         {
-                            writers[request.Binding.ExportRoot] = new(request.Binding, sourceFolders, comparer.ProtectedDirectoryIdentities);
+                            writers[request.Binding.ExportRoot] = new(request.Binding, sourceFolders, comparer.ProtectedDirectoryIdentities, knownBindings);
                             store.CleanupOwnedStaging(request.Binding);
                         }
                         if (desired == true)

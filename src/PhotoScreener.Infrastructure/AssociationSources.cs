@@ -13,11 +13,14 @@ public static class AssociationSources
         foreach (var folder in bindings.Where(b => PathGuard.Comparer.Equals(b.ExportRoot, index.Binding.ExportRoot)).Select(b => b.SourceFolder).Append(requested.Folder).Distinct(PathGuard.Comparer))
         {
             PathGuard.ValidateNoLinks(folder);
+            var names = new HashSet<string>(PathGuard.Comparer);
             foreach (var path in Directory.EnumerateFiles(folder))
             {
                 token.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(path);
-                if (!SourceCatalog.IsImage(name) || PathGuard.Comparer.Equals(path, requested.Path) ||
+                if (!SourceCatalog.IsImage(name)) continue;
+                if (!names.Add(name)) throw new IOException("Source image names differ only by case and cannot be safely distinguished in this session: " + name);
+                if (PathGuard.Comparer.Equals(path, requested.Path) ||
                     name != requested.Name && !entryNames.Any(entry => LegacyExportName.Candidate(name, entry))) continue;
                 if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
                 result.Add(new(path, folder, name, PathGuard.Revision(path)));

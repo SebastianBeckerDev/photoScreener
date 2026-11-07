@@ -15,12 +15,14 @@ public sealed class SourceCatalog : IReadOnlySource
         var directoryIdentities = new List<string>();
         for (var ancestor = PathGuard.Canonical(folder); ancestor != null; ancestor = Path.GetDirectoryName(ancestor))
             directoryIdentities.Add(PlatformFileSystem.DirectoryIdentity(ancestor));
+        var names = new HashSet<string>(PathGuard.Comparer);
         foreach (var path in Directory.EnumerateFiles(folder))
         {
             token.ThrowIfCancellationRequested();
             if (!IsImage(path)) continue;
             var info = new FileInfo(path);
             if ((info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            if (!names.Add(info.Name)) throw new IOException("Source image names differ only by case and cannot be safely distinguished in this session: " + info.Name);
             yield return new Photo(path, folder, info.Name, PathGuard.Revision(path)) { SourceDirectoryIdentities = directoryIdentities };
         }
     }

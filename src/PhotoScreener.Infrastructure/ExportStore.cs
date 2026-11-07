@@ -14,11 +14,12 @@ public sealed class ExportWriter : IDisposable
     private readonly FileStream ownership;
     private readonly IDisposable exportAnchor;
     public ExportBinding Binding { get; }
-    public ExportWriter(ExportBinding binding, IEnumerable<string> protectedFolders, IReadOnlyList<string>? rememberedSourceIdentities = null)
+    public ExportWriter(ExportBinding binding, IEnumerable<string> protectedFolders, IReadOnlyList<string>? rememberedSourceIdentities = null, IEnumerable<ExportBinding>? knownBindings = null)
     {
         var sources = protectedFolders.ToArray();
         Binding = binding; PathGuard.ValidateBinding(binding, sources);
         using var createdRoot = PlatformFileSystem.CreateDirectoryPinned(binding.ExportRoot);
+        if (knownBindings != null) BindingIdentityGuard.Validate(binding, knownBindings);
         exportAnchor = PlatformFileSystem.AnchorExportRoot(binding.ExportRoot, sources.Append(binding.SourceFolder), rememberedSourceIdentities);
         try
         {

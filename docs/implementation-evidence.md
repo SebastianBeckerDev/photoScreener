@@ -13,7 +13,9 @@ The replacement is in `src/`. On 2026-11-06 the user explicitly requested remova
 
 ## Windows verification
 
-Latest Release tests: 45 core/infrastructure and 23 Avalonia headless cases pass (68 total). Debug desktop tests also passed before the subsequent zoom/revision/information changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
+Latest Release tests: 49 core/infrastructure and 23 Avalonia headless cases pass (72 total). Debug desktop tests also passed before the subsequent zoom/revision/information changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
+
+The 2026-11-07 binding safety follow-up checks actual directory identity before using warm folder rows or mutating a captured target, and again after first creating a missing export root. Different path keys for the same physical directory are rejected with a consistent-spelling message. Windows paths containing trailing dots/spaces and case-sensitive directories that the session's case-insensitive keys cannot represent fail explicitly. Native tests use an extended-path alias, a trailing-dot alias, and an actual NTFS case-sensitive directory with two distinct `a.JPG`/`A.JPG` originals and `one`/`One` subdirectories. Rejected requests preserve the sources and existing export copy; library discovery reports the folder collision. Ordinary Windows case variants remain valid. The Mac case-sensitive/insensitive branch is runnable but not executed here. The published-package measurements below precede this follow-up; the Debug app is rebuilt with it.
 
 Tests perform actual filesystem mutations and child-process interruption, rather than simulating a pick database. The unchanged legacy helper recognizes new completed exports. Kill/recovery phases cover staging, completed publication, before deletion and completed deletion. Cleanup preserves an unrelated staging file.
 

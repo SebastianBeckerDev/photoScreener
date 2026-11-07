@@ -55,12 +55,14 @@ public sealed class FolderComparer : IFolderComparer
                 using var enumerator = Directory.EnumerateFileSystemEntries(ancestor).GetEnumerator(); enumerator.MoveNext();
                 return new(binding, new Dictionary<string, IReadOnlyList<ExportEntry>>());
             }
+            var names = new HashSet<string>(PathGuard.Comparer);
             foreach (var path in Directory.EnumerateFiles(binding.ExportRoot))
             {
                 token.ThrowIfCancellationRequested();
                 if (!SourceCatalog.IsImage(path)) continue;
                 if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
                 var revision = PathGuard.Revision(path); var name = Path.GetFileName(path);
+                if (!names.Add(name)) throw new IOException("Export image names differ only by case and cannot be safely distinguished in this session: " + name);
                 var entry = new ExportEntry(path, name, revision);
                 Add(Key(name, revision.Length), entry);
                 var stripped = LegacyExportName.StripSuffix(name);
