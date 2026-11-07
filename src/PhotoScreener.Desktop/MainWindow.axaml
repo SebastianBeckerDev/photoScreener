@@ -7,7 +7,7 @@
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
           <Button Name="OpenButton" Content="Open folder" ToolTip.Tip="Choose a folder of original JPEG or PNG photos to review." />
           <Button Name="FoldersButton" Content="Folders" ToolTip.Tip="Show or hide the folder list to navigate within the current project." />
-          <Button Name="TargetButton" Content="Export target" ToolTip.Tip="Choose where this folder's picked photos are copied. Each folder normally uses its own export subfolder; your choice stays with this folder for the session." />
+          <Button Name="TargetButton" Content="Export target" ToolTip.Tip="Choose where this folder's picked photos are copied. Your choice stays with this folder for the session. Folders using the same target share a pick when the original filenames and verified bytes are identical; Space then updates that shared pick." />
           <Button Name="RefreshButton" Content="Refresh" ToolTip.Tip="Rescan the current source and export folders to check for added, changed or removed photos." />
           <ComboBox Name="FilterBox" Width="120" SelectedIndex="0" ToolTip.Tip="Show all photos, only picked photos, or only unpicked photos in the current folder."><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
           <Button Name="ProjectPickedButton" Content="Project picks" ToolTip.Tip="Show picked photos across the current project, using each folder's own export target. Results appear as folders are scanned." />
@@ -58,12 +58,12 @@
     </Border>
     </Grid>
     <Border Grid.Row="2" Background="#1C2028" Padding="12,7">
-      <DockPanel><TextBlock Name="CurrentStatus" DockPanel.Dock="Right" Foreground="#8FDBB4" /><TextBlock Name="CurrentName" FontWeight="SemiBold" /></DockPanel>
+      <DockPanel><TextBlock Name="CurrentStatus" DockPanel.Dock="Right" Foreground="#8FDBB4" ToolTip.Tip="Observed and pending export status. A shared pick belongs to verified identical originals in the named number of folders; Space changes it for all of them." /><TextBlock Name="CurrentName" FontWeight="SemiBold" /></DockPanel>
     </Border>
     <Grid Grid.Row="3" RowDefinitions="Auto,Auto">
       <ListBox Name="Filmstrip" Height="145" Background="#171A21" SelectionMode="Single" AutoScrollToSelectedItem="False" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
-        <ListBox.ItemTemplate><DataTemplate><StackPanel Width="132" Spacing="3"><local:ThumbnailView Width="128" Height="88" /><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><TextBlock Text="{Binding Status}" FontSize="10" Foreground="#8FDBB4" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+        <ListBox.ItemTemplate><DataTemplate><StackPanel Width="132" Spacing="3"><local:ThumbnailView Width="128" Height="88" /><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><TextBlock Text="{Binding Status}" ToolTip.Tip="{Binding Status}" TextTrimming="CharacterEllipsis" FontSize="10" Foreground="#8FDBB4" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
       </ListBox>
       <DockPanel Grid.Row="1" Margin="12,4"><TextBlock DockPanel.Dock="Right" Text="← → Navigate · Space Pick / unpick · Wheel Zoom · Drag Move · Double-click Fit" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="FolderStatus" TextTrimming="CharacterEllipsis" /></DockPanel>
     </Grid>

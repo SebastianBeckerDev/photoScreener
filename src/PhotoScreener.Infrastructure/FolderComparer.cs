@@ -33,8 +33,16 @@ public sealed class FolderComparer : IFolderComparer
     public Func<bool>? ForegroundPending { get; set; }
     private long hashReadBytes;
     public long HashReadBytes => Interlocked.Read(ref hashReadBytes);
+    private long fullIndexScans, associationIndexScans, associationRevisionReads;
+    public long FullIndexScans => Interlocked.Read(ref fullIndexScans);
+    public long AssociationIndexScans => Interlocked.Read(ref associationIndexScans);
+    public long AssociationRevisionReads => Interlocked.Read(ref associationRevisionReads);
     private static string Key(string name, long length) => name.ToUpperInvariant() + "|" + length;
     public ExportIndex Index(ExportBinding binding, CancellationToken token)
+    { Interlocked.Increment(ref fullIndexScans); return BuildIndex(binding, token, null); }
+    public ExportIndex IndexAssociation(Photo photo, ExportBinding binding, CancellationToken token)
+    { Interlocked.Increment(ref associationIndexScans); return BuildIndex(binding, token, photo.Name); }
+    private ExportIndex BuildIndex(ExportBinding binding, CancellationToken token, string? originalName)
     {
         var candidates = new Dictionary<string, List<ExportEntry>>();
         try
@@ -56,12 +64,22 @@ public sealed class FolderComparer : IFolderComparer
                 return new(binding, new Dictionary<string, IReadOnlyList<ExportEntry>>());
             }
             var names = new HashSet<string>(PathGuard.Comparer);
-            foreach (var path in Directory.EnumerateFiles(binding.ExportRoot))
+            // Limit revision reads to this original's bare/legacy-suffixed candidates.
+            // A literal wildcard in a Mac filename requires a broader name query;
+            // Candidate still checks the complete literal filename before opening it.
+            var prefix = originalName == null ? "" : Path.GetFileNameWithoutExtension(originalName) + ".";
+            var wildcard = prefix.IndexOfAny(['*', '?']);
+            if (wildcard >= 0) prefix = prefix[..wildcard];
+            var options = new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false, MatchType = MatchType.Simple, MatchCasing = MatchCasing.CaseInsensitive };
+            foreach (var path in Directory.EnumerateFiles(binding.ExportRoot, prefix + "*", options))
             {
                 token.ThrowIfCancellationRequested();
                 if (!SourceCatalog.IsImage(path)) continue;
+                var name = Path.GetFileName(path);
+                if (originalName != null && !LegacyExportName.Candidate(originalName, name)) continue;
                 if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
-                var revision = PathGuard.Revision(path); var name = Path.GetFileName(path);
+                var revision = PathGuard.Revision(path);
+                if (originalName != null) Interlocked.Increment(ref associationRevisionReads);
                 if (!names.Add(name)) throw new IOException("Export image names differ only by case and cannot be safely distinguished in this session: " + name);
                 var entry = new ExportEntry(path, name, revision);
                 Add(Key(name, revision.Length), entry);

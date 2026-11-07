@@ -16,6 +16,24 @@ public sealed class MutationTests : IDisposable
     private Photo Source(string name = "a.JPG", string bytes = "abc")
     { var path = Path.Combine(root, name); File.WriteAllText(path, bytes); return catalog.Enumerate(root, default).Single(p => p.Path == path); }
     private Observation Observe(Photo photo) => comparer.Compare(photo, comparer.Index(Binding, default), [photo], default);
+    [Fact] public async Task AnUnrelatedLockedExportDoesNotBlockChangingTheCurrentAssociation()
+    {
+        var photo = Source(); Directory.CreateDirectory(Binding.ExportRoot);
+        var unrelated = Path.Combine(Binding.ExportRoot, "a.another-original.JPG"); File.WriteAllText(unrelated, "preserve");
+        await using var coordinator = new MutationCoordinator(comparer); coordinator.RegisterPhoto(photo, Binding);
+        MutationResult? result = null; coordinator.Completed += value => result = value;
+        using (var locked = new FileStream(unrelated, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            coordinator.Submit(new(photo, Binding, true, false, 1));
+            await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Null(result!.Error); Assert.True(result.Observation.Picked);
+            coordinator.Submit(new(photo, Binding, false, false, 2));
+            await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Null(result!.Error); Assert.False(result.Observation.Picked);
+        }
+        Assert.Equal("preserve", File.ReadAllText(unrelated)); Assert.Equal("abc", File.ReadAllText(photo.Path));
+        Assert.Equal(0, comparer.FullIndexScans); Assert.True(comparer.AssociationIndexScans >= 3);
+    }
     [Fact] public void SourceEditedAfterStagingCannotPublishTheOldRevisionAsACompletedRequest()
     {
         var photo = Source(); using var writer = new ExportWriter(Binding, [root]);

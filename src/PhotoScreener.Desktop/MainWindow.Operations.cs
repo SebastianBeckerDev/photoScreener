@@ -16,18 +16,26 @@ public partial class MainWindow
     private readonly record struct AssociationId(string Root, string Name, string Digest);
     private readonly Dictionary<AssociationId, HashSet<PhotoRow>> associations = [];
     private readonly Dictionary<PhotoRow, AssociationId> rowAssociations = [];
-    private AssociationId? AssociationKey(PhotoRow row) => row.IsExportOnly || row.Observation.Sha256 == null ? null : new(OperatingSystem.IsWindows() ? row.Binding.ExportRoot.ToUpperInvariant() : row.Binding.ExportRoot, row.Name, row.Observation.Sha256);
+    private AssociationId? AssociationKey(PhotoRow row) => row.IsExportOnly || row.VerifiedSourceSha256 == null ? null : new(OperatingSystem.IsWindows() ? row.Binding.ExportRoot.ToUpperInvariant() : row.Binding.ExportRoot, row.Name, row.VerifiedSourceSha256);
     private void ForgetAssociation(PhotoRow row)
     {
+        if (row.SetSharedFolderCount(0) && current == row) Text("CurrentStatus", row.Status);
         if (!rowAssociations.Remove(row, out var key) || !associations.TryGetValue(key, out var group)) return;
-        group.Remove(row); if (group.Count == 0) associations.Remove(key);
+        group.Remove(row); if (group.Count == 0) associations.Remove(key); else UpdateSharedGroup(group);
     }
     private void RegisterAssociation(PhotoRow row)
     {
         if (AssociationKey(row) is not { } key) { ForgetAssociation(row); return; }
         if (rowAssociations.GetValueOrDefault(row) != key) ForgetAssociation(row);
         if (!associations.TryGetValue(key, out var group)) associations[key] = group = [];
-        group.Add(row); rowAssociations[row] = key;
+        var added = group.Add(row); rowAssociations[row] = key;
+        if (added) UpdateSharedGroup(group);
+    }
+    private void UpdateSharedGroup(HashSet<PhotoRow> group)
+    {
+        var count = group.Select(row => row.Photo.Folder).Distinct(PathGuard.Comparer).Count();
+        foreach (var row in group)
+            if (row.SetSharedFolderCount(count) && current == row) Text("CurrentStatus", row.Status);
     }
     private void UnregisterRow(PhotoRow row)
     {
@@ -97,6 +105,14 @@ public partial class MainWindow
         var coordinator = new MutationCoordinator(comparer);
         coordinator.Completed += result => Dispatcher.UIThread.Post(() =>
         {
+            var propagated = new HashSet<PhotoRow>();
+            foreach (var photo in result.Photos)
+            {
+                registered.TryGetValue(photo.Path, out var requested);
+                if (requested?.Photo.Revision != photo.Revision) requested = operationRows.FirstOrDefault(row => PathGuard.Comparer.Equals(row.Photo.Path, photo.Path) && row.Photo.Revision == photo.Revision);
+                if (requested != null && AssociationKey(requested) is { } key && associations.TryGetValue(key, out var group))
+                    propagated.UnionWith(group.Where(row => row.Intent.Sequence == result.Sequence));
+            }
             foreach (var photo in result.Photos)
             {
                 registered.TryGetValue(photo.Path, out var row);
@@ -114,6 +130,15 @@ public partial class MainWindow
                 else if (result.Observation.Picked.HasValue && !newer) { row.Intent.Complete(result.Observation.Picked.Value, result.Sequence); row.Notify(); }
                 if (current == row) Text("CurrentStatus", row.Status);
                 if (!newer && result.Error == null) operationRows.Remove(row);
+            }
+            foreach (var stale in propagated.Where(row => row.Intent.Sequence == result.Sequence && !result.Photos.Any(photo => PathGuard.Comparer.Equals(photo.Path, row.Photo.Path) && photo.Revision == row.Photo.Revision)))
+            {
+                // The worker's fresh source census can invalidate an optimistic
+                // shared-row request after an edit or binding change.
+                stale.Observe(new(PhotoScreener.Core.PickStatus.Checking, stale.Observation.Copies, Error: "Shared association changed; Refresh this folder before requesting another change."));
+                stale.Intent.Cancel(); stale.Notify(); ForgetAssociation(stale); completeFolders.Remove(stale.Photo.Folder);
+                if (!operationRows.Contains(stale) && operationRows.Count < 1024) operationRows.Add(stale);
+                if (current == stale) Text("CurrentStatus", stale.Status);
             }
             UpdateCounts();
         }, DispatcherPriority.Normal);

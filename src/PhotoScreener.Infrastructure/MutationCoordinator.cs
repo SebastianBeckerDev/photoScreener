@@ -113,12 +113,12 @@ public sealed class MutationCoordinator : IAsyncDisposable
                     PathGuard.ValidateBinding(request.Binding, sourceFolders);
                     BindingIdentityGuard.Validate(request.Binding, knownBindings);
                     // Files are authoritative even if a watcher/Refresh has not run.
-                    var index = comparer.Index(request.Binding, token);
+                    var index = comparer.IndexAssociation(request.Photo, request.Binding, token);
                     var sameTarget = AssociationSources.Read(request.Photo, index, knownBindings, token);
                     observation = comparer.Compare(request.Photo, index, sameTarget, token);
                     if (!observation.Picked.HasValue) throw new IOException(observation.Error ?? "Association is not yet safe to change.");
                     var sameName = sameTarget.Where(p => p.Name == request.Photo.Name).ToArray();
-                    var digest = observation.Sha256 ?? request.Sha256;
+                    var digest = observation.Sha256 ?? (request.Photo.Revision.ChangeToken != null ? request.Sha256 : null);
                     if (sameName.Length > 1) digest ??= comparer.Hash(request.Photo.Path, request.Photo.Revision, token);
                     if (digest != null)
                     {
@@ -157,18 +157,20 @@ public sealed class MutationCoordinator : IAsyncDisposable
                             observation = comparer.Compare(request.Photo, index, AssociationSources.Read(request.Photo, index, knownBindings, token), token);
                             if (observation.Picked != true) throw new IOException(observation.Error ?? "Export association changed before removal; retry.");
                             store.Remove(request.Photo, request.Binding, observation.Copies, token);
-                            var fresh = comparer.Index(request.Binding, token);
+                            var fresh = comparer.IndexAssociation(request.Photo, request.Binding, token);
                             observation = comparer.Compare(request.Photo, fresh, AssociationSources.Read(request.Photo, fresh, knownBindings, token), token);
                             if (observation.Picked != false) throw new IOException(observation.Error ?? "Export copies changed during removal; retry to remove the remaining current copies.");
                         }
                     }
+                    if (observation.Status is PickStatus.Unpicked or PickStatus.Picked && digest != null && observation.Sha256 == null)
+                        observation = observation with { Sha256 = digest };
                 }
                 catch (OperationCanceledException) { canceled = true; }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { error = e.Message; }
                 if (error != null || canceled)
                 {
                     // Failures can occur after some duplicates were deleted or a final file was published.
-                    var fresh = comparer.Index(request.Binding, CancellationToken.None);
+                    var fresh = comparer.IndexAssociation(request.Photo, request.Binding, CancellationToken.None);
                     try { observation = comparer.Compare(request.Photo, fresh, AssociationSources.Read(request.Photo, fresh, knownBindings, CancellationToken.None), CancellationToken.None); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { observation = new(PickStatus.Unavailable, [], Error: e.Message); }
                 }

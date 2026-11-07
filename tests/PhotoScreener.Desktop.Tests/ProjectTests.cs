@@ -33,6 +33,47 @@ public sealed class ProjectTests
     }
     private static void Click(MainWindow window, string name) => window.FindControl<Button>(name)!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     [AvaloniaFact]
+    public async Task AVerifiedSharedPickIsVisibleAndSpaceUpdatesBothOriginals()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-visible-shared-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        var one = Path.Combine(root, "one"); var two = Path.Combine(root, "two"); var target = Path.Combine(root, "shared");
+        Directory.CreateDirectory(one); Directory.CreateDirectory(two);
+        var firstPath = Path.Combine(one, "a.JPG"); var secondPath = Path.Combine(two, "a.JPG");
+        Image(firstPath, SKColors.Coral); File.Copy(firstPath, secondPath); var bytes = File.ReadAllBytes(firstPath);
+        var photo = new SourceCatalog().Enumerate(one, default).Single(); var binding = new PhotoScreener.Core.ExportBinding(one, target);
+        using (var owner = new ExportWriter(binding, [one, two])) new ExportStore(new()).Pick(photo, binding, () => true, default);
+        var window = new MainWindow(); window.Show();
+        try
+        {
+            var resolver = Assert.IsType<ExportBindingResolver>(typeof(MainWindow).GetField("bindings", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window));
+            await Task.Run(() => { resolver.Bind(one, target, [one, two]); resolver.Bind(two, target, [one, two]); });
+            var strip = window.FindControl<ListBox>("Filmstrip")!;
+            await window.OpenFolder(one); var first = Assert.IsType<PhotoRow>(strip.SelectedItem);
+            await Wait(() => first.Picked == true);
+            await window.OpenFolder(two); var second = Assert.IsType<PhotoRow>(strip.SelectedItem);
+            await Wait(() => second.Picked == true && second.SharedFolderCount == 2);
+            Assert.Equal(2, first.SharedFolderCount);
+            Assert.Contains("shared across 2 folders", window.FindControl<TextBlock>("CurrentStatus")!.Text);
+            window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+            await Wait(() => first.Picked == false && second.Picked == false);
+            Assert.Same(second, strip.SelectedItem); Assert.Equal(2, second.SharedFolderCount);
+            Assert.Empty(Directory.EnumerateFiles(target, "*.JPG"));
+            Assert.Equal(bytes, File.ReadAllBytes(firstPath)); Assert.Equal(bytes, File.ReadAllBytes(secondPath));
+            // A previously shared original can be edited while its folder is inactive.
+            window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+            await Wait(() => first.Picked == true && second.Picked == true);
+            await window.OpenFolder(one); await EditImage(secondPath, SKColors.Blue);
+            var editedBytes = File.ReadAllBytes(secondPath);
+            window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+            await Wait(() => first.Picked == false && !first.Intent.Pending);
+            await Wait(() => !second.Intent.Pending);
+            await window.OpenFolder(two); var changed = Assert.IsType<PhotoRow>(strip.SelectedItem);
+            Assert.NotSame(second, changed); await Wait(() => changed.Picked == false);
+            Assert.Equal(bytes, File.ReadAllBytes(firstPath)); Assert.Equal(editedBytes, File.ReadAllBytes(secondPath));
+        }
+        finally { window.Close(); await Wait(() => !window.IsVisible); Directory.Delete(root, true); }
+    }
+    [AvaloniaFact]
     public async Task ReturningFromProjectPicksAndRefreshingDoesNotDuplicateCachedFolderRows()
     {
         var root = Path.Combine(Path.GetTempPath(), "photoscreener-project-return-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);

@@ -140,6 +140,7 @@ public partial class MainWindow
                     totalOperations, copiedBytes = mutations.CopiedBytes, hashReadBytes = comparer.HashReadBytes, errors = errors.ToArray(),
                     mutationThroughput = new { mixedSeconds, copiedBytesPerSecond = mixedCopyBytes / mixedSeconds, hashBytesPerSecond = mixedHashBytes / mixedSeconds },
                     thumbnailDiskWrites = Images.ThumbnailWrites,
+                    exportIndexScans = new { full = comparer.FullIndexScans, association = comparer.AssociationIndexScans, associationRevisionReads = comparer.AssociationRevisionReads },
                     metadataWrites = metadata.SuccessfulWrites, maintenanceErrors = maintenanceErrors.ToArray(),
                     limitation = "Synthetic diagnostics are not representative photographic evidence. Decoded-cache cold does not establish uncached SSD timing. No physical-display or Mac gate inferred."
                 };

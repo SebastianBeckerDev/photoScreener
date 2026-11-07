@@ -23,6 +23,7 @@ public partial class MainWindow
             foreach (var hint in watchers.TakeHints())
             {
                 var dirty = hint.Folder;
+                if (hint.PhotosChanged && folders.ContainsKey(dirty)) completeFolders.Remove(dirty);
                 if (activeFolder == null || !folders.TryGetValue(activeFolder, out var collection)) continue;
                 if (PathGuard.Comparer.Equals(dirty, activeFolder))
                 {
