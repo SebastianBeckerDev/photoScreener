@@ -294,7 +294,16 @@ public static partial class PlatformFileSystem
     [LibraryImport("libc", EntryPoint = "open", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     private static partial int Open(string path, int flags);
     [LibraryImport("libc", EntryPoint = "openat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    private static partial int OpenAt(int directory, string path, int flags, uint mode);
+    private static partial int OpenAtFixed(int directory, string path, int flags, uint mode);
+    // Darwin ARM64 passes variadic arguments on the stack. openat's mode is
+    // variadic, so a fixed four-argument P/Invoke puts it in the wrong register.
+    // Exhaust x0..x7 before the mode argument to match the native stack ABI.
+    [LibraryImport("libc", EntryPoint = "openat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int OpenAtArm64(int directory, string path, int flags, long unused3, long unused4, long unused5, long unused6, long unused7, uint mode);
+    private static int OpenAt(int directory, string path, int flags, uint mode)
+        => OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? OpenAtArm64(directory, path, flags, 0, 0, 0, 0, 0, mode)
+            : OpenAtFixed(directory, path, flags, mode);
     [LibraryImport("libc", EntryPoint = "mkdirat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     private static partial int MakeDirectoryAt(int directory, string path, uint mode);
     [LibraryImport("libc", EntryPoint = "unlinkat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
