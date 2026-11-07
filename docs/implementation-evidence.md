@@ -9,7 +9,7 @@ The replacement is in `src/`. On 2026-11-06 the user explicitly requested remova
 | P-03 | Default/custom per-folder targets; full-content old/new/bare-copy associations; duplicate/shared rules; ownership dialog; progressive project picks | Eight-of-ten no-metadata recovery; false-positive/ambiguity/version/default/custom-target cases |
 | P-04 | Bounded serialized latest-intent worker; captured targets; one-pass source MD5/SHA-256; verified staging/publication/deletion; ownership; cancel/drain/retry | Legacy read-back; real short-suffix collision; shared convergence; substitution/hardlinks/locked duplicates; four child-process kill/recovery phases |
 | P-05 | Optional atomic cursor/filter/history; watcher hints and Refresh; unavailable/empty distinction; revision/stale-result guards | Missing/corrupt/null JSON; maintenance ownership; external changes; saved-filter/cursor restoration; retained focus on first export creation |
-| P-06 | Self-contained Windows/Mac payloads; bundle/plist/entitlements/signing scripts; platform CI | Cross-publish/native inspection and an earlier Windows package smoke executed. Packages require refreshing after the latest changes. Mac execution/signing and reference acceptance outstanding |
+| P-06 | Self-contained Windows/Mac payloads; bundle/plist/entitlements/signing scripts; platform CI | Updated Windows self-contained package passed 1,200-action mixed-load validation on 2026-11-07. Updated Mac cross-publish and bundle inspection passed for 18 ARM64 native binaries (maximum required macOS 12, bundle profile 14+); Mac execution/signing and reference acceptance remain outstanding |
 
 ## Windows verification
 
@@ -20,6 +20,23 @@ Tests perform actual filesystem mutations and child-process interruption, rather
 The UI offers pending/error states, retry/cancel, a work panel and tooltips on every button. Optional JSON never establishes picks. Its saved filter/cursor applies after association checks and only if navigation has not already begun. Creating a default export does not reset the focused photo.
 
 ## Windows measurements
+
+Latest self-contained package, including photo information and centered thumbnails: `artifacts/performance/windows-package-information.json`, 2026-11-07. The app used its bundled .NET 10.0.11 with installed-runtime lookup disabled. The synthetic mixed folder contained 10,000 files; the information sidebar was visible, giving a 1209 × 647 physical preview area.
+
+| Measurement | Latest package result |
+| --- | --- |
+| Inputs | 1,200 in 60.007 seconds |
+| Input feedback p95 / p99 | 1.253 / 3.782 ms |
+| Drawing submission p95 / p99 | 16.849 / 18.198 ms |
+| First usable preview | 413.562 ms; one opening sample |
+| Stable decoded-cache cold low/full p95 | 7.080 / 19.917 ms; 100 samples |
+| Peak sampled working set | 378.297 MiB |
+| Decoded cache / image queue / realized thumbnails maxima | 63.942 MiB / 12 / 11 |
+| Mutation results / copied bytes / hash-read bytes | 240 / 202,584,237 / 238,036,701 |
+| Optional review JSON writes | 1,138 |
+| Export and maintenance errors | None |
+
+These diagnostics do not establish representative photo-corpus, uncached OS/SSD, physical-display or Mac acceptance. Older runs below document earlier findings and are superseded by this report for the current Windows package.
 
 Hardware: Core i5-1345U, 10 physical/12 logical cores; 16,849,256,448 bytes RAM. D: is a Samsung PM9B1 1 TB NVMe SSD. Windows 10.0.26300; SDK 10.0.303; framework-dependent runs use .NET 10.0.14. Physical preview 1439 × 647, below the required 1920 × 1080.
 
@@ -40,7 +57,7 @@ Diagnostic corpora: 100 generated 4000 × 3000 JPEGs (12 MP, roughly 1.7 MB each
 | Mutation results / copied bytes / hash-read bytes | 240 / 202,584,237 / 238,036,701 |
 | Successful JSON writes | 1,107 |
 
-That run exposed one optional JSON replacement/read-sharing conflict. Readers now permit atomic replacement. A later short run (`tiles-metadata-final.json`) completed 51 JSON writes with no maintenance/export errors; the rendered viewport's tiles were visually checked. The final fresh-disk-cache mixed run is in progress.
+That older run exposed one optional JSON replacement/read-sharing conflict. Readers now permit atomic replacement. A later short run (`tiles-metadata-final.json`) completed 51 JSON writes with no maintenance/export errors; the rendered viewport's tiles were visually checked. The latest full package run above also completed without these errors.
 
 The first 10,000-file run failed latency despite bounded memory. Profiling found a source array rebuilt for every compared photo and synchronous strip layout inside the key handler. Sources are now grouped once, comparisons publish bounded batches, and strip scrolling is coalesced outside the handler. Failed reports remain under artifacts.
 

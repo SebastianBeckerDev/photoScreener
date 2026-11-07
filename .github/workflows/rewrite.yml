@@ -1,0 +1,28 @@
+name: Rewrite build and platform tests
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.303
+      - run: dotnet restore PhotoScreener.Rewrite.sln --locked-mode
+      - run: dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
+      - shell: pwsh
+        run: ./scripts/Publish-Rewrite.ps1
+  macos:
+    runs-on: [self-hosted, macOS, ARM64]
+    env:
+      # /var is a symlink on macOS; filesystem fixtures require a physical path.
+      TMPDIR: /private/tmp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.303
+      - run: test "$(uname -m)" = arm64
+      - run: dotnet restore PhotoScreener.Rewrite.sln --locked-mode
+      - run: dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
+      - run: bash scripts/package-macos.sh
