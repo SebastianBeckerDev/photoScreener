@@ -13,6 +13,7 @@
           <Button Name="ProjectPickedButton" Content="Project picks" ToolTip.Tip="Show picked photos across the current project, using each folder's own export target. Results appear as folders are scanned." />
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+          <Button Name="InfoButton" Content="Info" ToolTip.Tip="Show or hide capture time, focal length, exposure, ISO, the preview histogram and GPS information stored in the current photo." />
           <Button Name="ZoomFitButton" Content="Fit" ToolTip.Tip="Reset zoom and show the complete photo. You can also double-click the photo. Use the mouse wheel to zoom around the pointer and drag to move a zoomed photo." />
           <Button Name="StripButton" Content="Strip" ToolTip.Tip="Show or hide the thumbnail strip to give the preview more space." />
           <Button Name="WorkButton" Content="Work" ToolTip.Tip="Show or hide pending and failed pick or unpick changes. Select an entry to review that photo." />
@@ -22,7 +23,7 @@
         <TextBlock Name="Counts" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#BCC5D4" />
       </DockPanel>
     </Border>
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
     <Border Name="FoldersPanel" IsVisible="False" Width="220" Background="#171A21" Padding="8">
       <DockPanel><TextBlock DockPanel.Dock="Top" Text="Project folders" FontWeight="SemiBold" Margin="4,4,4,8" /><ListBox Name="FolderList"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel>
     </Border>
@@ -35,6 +36,25 @@
           <DockPanel><TextBlock DockPanel.Dock="Top" Text="Pending and failed changes" Margin="0,0,0,8" FontWeight="SemiBold" /><ListBox Name="WorkList"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="11" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel>
         </Border>
       </Grid>
+    </Border>
+    <Border Grid.Column="2" Name="InfoPanel" Width="230" Background="#171A21" Padding="14,12">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="7">
+          <TextBlock Text="Photo information" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,8" />
+          <TextBlock Text="Capture time" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="CaptureTimeValue" Text="Unknown" TextWrapping="Wrap" ToolTip.Tip="EXIF capture time. Without an embedded timezone offset this is the camera's local time." />
+          <TextBlock Text="Focal length" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="FocalLengthValue" Text="Unknown" />
+          <TextBlock Text="Exposure" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="ExposureValue" Text="Unknown" />
+          <TextBlock Text="ISO" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="IsoValue" Text="Unknown" />
+          <TextBlock Text="Aperture" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="ApertureValue" Text="Unknown" />
+          <TextBlock Text="Camera" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="CameraValue" Text="Unknown" TextWrapping="Wrap" />
+          <TextBlock Text="Lens" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="LensValue" Text="Unknown" TextWrapping="Wrap" />
+          <TextBlock Text="GPS position" Foreground="#8B96A8" FontSize="11" /><TextBlock Name="LocationValue" Text="Unknown" TextWrapping="Wrap" />
+          <TextBlock Text="Histogram" FontWeight="SemiBold" Margin="0,12,0,2" />
+          <local:HistogramView Name="Histogram" Height="86" />
+          <TextBlock Name="HistogramStatus" Text="Histogram unavailable" Foreground="#8B96A8" FontSize="10" TextWrapping="Wrap" />
+          <TextBlock Name="InfoNotice" Foreground="#8B96A8" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" />
+        </StackPanel>
+      </ScrollViewer>
     </Border>
     </Grid>
     <Border Grid.Row="2" Background="#1C2028" Padding="12,7">

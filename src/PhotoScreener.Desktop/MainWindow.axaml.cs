@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using PhotoScreener.Core;
 using PhotoScreener.Desktop.Imaging;
 using PhotoScreener.Infrastructure;
@@ -42,6 +44,7 @@ public partial class MainWindow : Window
         var cacheOption = args.Contains("--benchmark") ? Array.IndexOf(args, "--cache-dir") : -1;
         Images = new(cacheOption >= 0 && cacheOption + 1 < args.Length ? args[cacheOption + 1] : null);
         InitializeComponent();
+        InitializeInformation();
         comparer.ForegroundPending = () => Images.ForegroundPending; mutations = CreateMutations();
         InitializeReconciliation();
         Strip.ItemsSource = rows;
@@ -51,13 +54,13 @@ public partial class MainWindow : Window
         this.FindControl<Button>("OpenButton")!.Click += async (_, _) => await ChooseSource();
         this.FindControl<Button>("TargetButton")!.Click += async (_, _) => await ChooseTarget();
         this.FindControl<Button>("RefreshButton")!.Click += async (_, _) => { if (activeFolder != null) await OpenFolder(activeFolder, true); Surface.Focus(); };
-        this.FindControl<Button>("StripButton")!.Click += (_, _) => { Strip.IsVisible = !Strip.IsVisible; Surface.Focus(); };
+        this.FindControl<Button>("StripButton")!.Click += (_, _) => { Strip.IsVisible = !Strip.IsVisible; if (Strip.IsVisible && current != null) QueueStripScroll(current); Surface.Focus(); };
         this.FindControl<Button>("WorkButton")!.Click += (_, _) => { WorkPanel.IsVisible = !WorkPanel.IsVisible; Surface.Focus(); };
         WorkList.ItemsSource = operationRows;
         FolderList.ItemsSource = folderEntries;
         FoldersButton.Click += (_, _) => { FoldersPanel.IsVisible = !FoldersPanel.IsVisible; Surface.Focus(); };
         FolderList.SelectionChanged += async (_, _) => { if (FolderList.SelectedItem is FolderEntry entry) await OpenFolder(entry.Path); Surface.Focus(); };
-        WorkList.SelectionChanged += (_, _) => { if (WorkList.SelectedItem is PhotoRow row) { interactionGeneration++; filter = ReviewFilter.All; revealing = true; FilterBox.SelectedIndex = 0; revealing = false; ShowFolderRows(row.Photo.Folder, row); FocusPhoto(row); Surface.Focus(); } };
+        WorkList.SelectionChanged += (_, _) => { if (WorkList.SelectedItem is PhotoRow requested) { var row = registered.GetValueOrDefault(requested.Photo.Path) ?? requested; interactionGeneration++; filter = ReviewFilter.All; revealing = true; FilterBox.SelectedIndex = 0; revealing = false; ShowFolderRows(row.Photo.Folder, row); FocusPhoto(row); Surface.Focus(); } };
         this.FindControl<Button>("ProjectPickedButton")!.Click += (_, _) => ShowProjectPicks();
         this.FindControl<Button>("RetryButton")!.Click += async (_, _) => { if (current != null) { if (current.Observation.Status == PhotoScreener.Core.PickStatus.Ambiguous) await ResolveOwnership(current); else RequestMutation(current); } Surface.Focus(); };
         this.FindControl<Button>("CancelButton")!.Click += (_, _) => CancelPending();
@@ -67,7 +70,12 @@ public partial class MainWindow : Window
             if (!revealing)
             {
                 interactionGeneration++;
-                if (projectView && filter != ReviewFilter.Picked && current != null) ShowFolderRows(current.Photo.Folder, current);
+                if (projectView && filter != ReviewFilter.Picked && current != null)
+                {
+                    var retain = current.IsExportOnly ? folders.GetValueOrDefault(current.Photo.Folder)?.FirstOrDefault() : current;
+                    if (retain != null) ShowFolderRows(retain.Photo.Folder, retain);
+                    else { projectView = false; pickedContext.Cancel(); projectGeneration++; rows.Clear(); ClearFocus(); }
+                }
                 ApplyFilter();
             }
             Surface.Focus();
@@ -76,7 +84,7 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, HandleKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, (_, e) => { if (e.Key == Key.Space) spaceDown = false; }, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => spaceDown = false;
-        SizeChanged += (_, _) => { if (current != null) RequestPreview(); };
+        Surface.SizeChanged += (_, _) => { if (current != null) { RequestPreview(true); QueueStripScroll(current); } };
         Closing += async (_, e) =>
         {
             if (closing) return;
@@ -102,7 +110,7 @@ public partial class MainWindow : Window
             if (projectPicks != null) await projectPicks.DisposeAsync();
             watchers.Dispose();
             Preview.Source = null; previewLease?.Dispose(); previewLease = null;
-            await Images.DisposeAsync(); Close();
+            await Images.DisposeAsync(); await information.DisposeAsync(); Close();
         };
         Opened += async (_, _) =>
         {
@@ -196,7 +204,7 @@ public partial class MainWindow : Window
         completeFolders.Remove(captured);
         var preferredCursor = cursors.GetValueOrDefault(captured);
         foreach (var previous in registered.Values.Where(r => PathGuard.Comparer.Equals(r.Photo.Folder, captured)).ToArray())
-        { registered.Remove(previous.Photo.Path); foreach (var group in associations.Values) group.Remove(previous); }
+        { UnregisterRow(previous); }
         counts[captured] = (0, 0, 0);
         var collection = new ObservableCollection<PhotoRow>(); folders[captured] = collection;
         var remembered = false;
@@ -245,6 +253,7 @@ public partial class MainWindow : Window
         {
             e.Handled = true; if (spaceDown) return; spaceDown = true;
             if (current == null) return;
+            if (current.IsExportOnly) { Text("CurrentStatus", "Unmatched export preserved · Open its original source to review"); return; }
             interactionGeneration++;
             current.Toggle(++sequence); Text("CurrentStatus", current.Status);
             if (projectView || filter != ReviewFilter.All)
@@ -269,7 +278,7 @@ public partial class MainWindow : Window
     }
     private void FocusPhoto(PhotoRow row)
     {
-        if (current?.Photo != row.Photo) { Preview.ResetView(); Text("ZoomStatus", "Fit"); }
+        if (current?.Photo != row.Photo) { Preview.ResetView(); Text("ZoomStatus", "Fit"); LoadInformation(row); }
         current = row; focusGeneration++;
         Text("CurrentName", row.Name); Text("CurrentStatus", row.Status);
         applyingSelection = true; Timed("selection", () => Strip.SelectedItem = row); QueueStripScroll(row); applyingSelection = false;
@@ -288,6 +297,17 @@ public partial class MainWindow : Window
             var requested = scrollRequest; scrollRequest = null;
             if (closing || requested == null || current != requested || !rows.Contains(requested)) return;
             Timed("deferred-strip-scroll", () => Strip.ScrollIntoView(requested));
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (closing || current != requested || !Strip.IsVisible || !rows.Contains(requested)) return;
+                var viewer = Strip.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+                var container = Strip.ContainerFromItem(requested);
+                if (viewer == null || container == null || viewer.Viewport.Width <= 0) return;
+                var center = container.TranslatePoint(new Avalonia.Point(container.Bounds.Width / 2, 0), viewer);
+                if (center == null) return;
+                var offset = viewer.Offset.X + center.Value.X - viewer.Viewport.Width / 2;
+                viewer.Offset = new(Math.Clamp(offset, 0, Math.Max(0, viewer.Extent.Width - viewer.Viewport.Width)), viewer.Offset.Y);
+            }, DispatcherPriority.Loaded);
         }, DispatcherPriority.Background);
     }
     private void RequestPreview() => RequestPreview(false);
@@ -310,12 +330,13 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Render);
         var side = PreviewSide();
         FocusRequested?.Invoke(row, focus);
-        Timed("preview-queue", () => Images.Focus(new(row.Photo, 800, context, false, (lease, error) => Publish(lease, error, false)),
+        Timed("preview-queue", () => Images.Focus(new(row.Photo, 800, context, false, (lease, error) => Publish(lease, error, false), IncludeHistogram: InfoPanel.IsVisible),
             new(row.Photo, side, context, true, (lease, error) => Publish(lease, error, true))));
     }
     private int PreviewSide() => Math.Clamp((int)(Math.Max(Surface.Bounds.Width, Surface.Bounds.Height) * RenderScaling * Preview.Zoom), 1024, 3840);
     private void ClearFocus()
     {
+        ClearInformation();
         Preview.ResetView(); Text("ZoomStatus", "Fit");
         current = null; focusGeneration++; Preview.Source = null; previewLease?.Dispose(); previewLease = null;
         Text("CurrentName", ""); Text("CurrentStatus", ""); Text("PreviewMessage", "No photos in this view");
@@ -352,7 +373,7 @@ public partial class MainWindow : Window
     {
         var projectCounts = projectView ? counts.Where(c => projectRoot == null || PathGuard.Within(c.Key, projectRoot)).Select(c => c.Value).ToArray() : [];
         var count = projectView ? (projectCounts.Sum(c => c.Total), projectCounts.Sum(c => c.Picked), projectCounts.Sum(c => c.Checking)) : activeFolder != null ? counts.GetValueOrDefault(activeFolder) : (0, 0, 0);
-        Text("Counts", $"{count.Item2} picked / {count.Item1}{(projectView && !projectComplete ? "+" : "")} · {count.Item3} checking · {mutations?.PendingCount ?? 0} pending");
+        Text("Counts", $"{count.Item2} picked / {count.Item1}{(projectView && !projectComplete ? "+" : "")} · {count.Item3} checking · {mutations?.PendingCount ?? 0} pending" + (projectView && unmatchedProjectRows.Count > 0 ? $" · {unmatchedProjectRows.Count} unmatched exports" : ""));
     }
     // Extended by the comparison/mutation and performance slices.
     private partial void BeginComparison(ObservableCollection<PhotoRow> collection, long context);

@@ -9,6 +9,7 @@ public sealed class ImageLease : IDisposable
     private SharedImage? image;
     internal ImageLease(SharedImage image) { this.image = image; image.Retain(); }
     public Bitmap Bitmap => image!.Bitmap;
+    internal ImageLease Fork() => new(image ?? throw new ObjectDisposedException(nameof(ImageLease)));
     public void Dispose() => Interlocked.Exchange(ref image, null)?.Release();
 }
 internal sealed class SharedImage(Bitmap bitmap)
@@ -19,7 +20,7 @@ internal sealed class SharedImage(Bitmap bitmap)
     public void Retain() => Interlocked.Increment(ref references);
     public void Release() { if (Interlocked.Decrement(ref references) == 0) Bitmap.Dispose(); }
 }
-public sealed record ImageRequest(Photo Photo, int Side, long Generation, bool Full, Action<ImageLease?, string?> Complete, object? Owner = null, bool Relaxed = false);
+public sealed record ImageRequest(Photo Photo, int Side, long Generation, bool Full, Action<ImageLease?, string?> Complete, object? Owner = null, bool Relaxed = false, bool IncludeHistogram = false);
 
 // Two fixed workers: latest focused low preview, and fair full/visible/idle work.
 public sealed class PreviewScheduler : IAsyncDisposable
@@ -45,6 +46,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     public int ThumbnailWrites => diskCache.SuccessfulWrites;
     public bool ForegroundPending { get { lock (gate) return low != null || full != null || visible.Count > 0; } }
     public event Action<Photo, bool, double>? Decoded;
+    public event Action<Photo, long, IReadOnlyList<int>?>? HistogramReady;
     public PreviewScheduler(string? cacheDirectory = null) { diskCache = new(cacheDirectory); workers = [Task.Run(UrgentLoop), Task.Run(SecondaryLoop)]; }
     public void SetContext(long value, IReadOnlyList<Photo> photos)
     {
@@ -120,6 +122,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
         var watch = System.Diagnostics.Stopwatch.StartNew();
         ImageLease? lease = null;
         ImageLease? cacheWriteLease = null;
+        ImageLease? histogramLease = null;
         try
         {
             using var backgroundPriority = request.Relaxed ? PlatformFileSystem.BackgroundWork() : null;
@@ -150,15 +153,23 @@ public sealed class PreviewScheduler : IAsyncDisposable
                     { var evicted = cache[last.Value]; cache.Remove(last.Value); recency.RemoveLast(); bytes -= evicted.Image.Bytes; evicted.Image.Release(); }
                 }
             }
+            if (request.IncludeHistogram) histogramLease = lease!.Fork();
             Decoded?.Invoke(request.Photo, request.Full, watch.Elapsed.TotalMilliseconds);
             request.Complete(lease, null); lease = null;
+            if (histogramLease != null)
+            {
+                IReadOnlyList<int>? histogram = null;
+                try { histogram = PreviewHistogram.Read(histogramLease.Bitmap); } catch (Exception e) when (e is not OutOfMemoryException) { }
+                HistogramReady?.Invoke(request.Photo, request.Generation, histogram);
+                histogramLease.Dispose(); histogramLease = null;
+            }
             if (cacheWriteLease != null)
             { using var background = PlatformFileSystem.BackgroundWork(); diskCache.Write(Key(request), cacheWriteLease.Bitmap); }
         }
         catch (Exception e) when (e is not OutOfMemoryException) { request.Complete(null, e.Message); }
         finally
         {
-            lease?.Dispose(); cacheWriteLease?.Dispose();
+            lease?.Dispose(); cacheWriteLease?.Dispose(); histogramLease?.Dispose();
             lock (gate) if (ReferenceEquals(focusedQuick, request)) awaitingQuick = false;
             Wake(secondarySignal);
         }

@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><PackageReference Include="SkiaSharp" /></ItemGroup>
+  <ItemGroup><Compile Include="../PhotoScreener.Tests/Fixtures/PhotoExifFixture.cs" Link="Fixtures/PhotoExifFixture.cs" /></ItemGroup>
 </Project>

@@ -16,6 +16,14 @@ public sealed class MutationTests : IDisposable
     private Photo Source(string name = "a.JPG", string bytes = "abc")
     { var path = Path.Combine(root, name); File.WriteAllText(path, bytes); return catalog.Enumerate(root, default).Single(p => p.Path == path); }
     private Observation Observe(Photo photo) => comparer.Compare(photo, comparer.Index(Binding, default), [photo], default);
+    [Fact] public void SourceEditedAfterStagingCannotPublishTheOldRevisionAsACompletedRequest()
+    {
+        var photo = Source(); using var writer = new ExportWriter(Binding, [root]);
+        store.Phase = phase => { if (phase == "verify") File.WriteAllText(photo.Path, "xyz"); };
+        Assert.Throws<IOException>(() => store.Pick(photo, Binding, () => true, default));
+        Assert.Empty(Directory.EnumerateFiles(Binding.ExportRoot, "*.JPG"));
+        Assert.Equal("xyz", File.ReadAllText(photo.Path));
+    }
     [Fact] public async Task SameLengthEditWithRestoredTimestampCannotReuseOldHashOrDeleteOlderExport()
     {
         var photo = Source();

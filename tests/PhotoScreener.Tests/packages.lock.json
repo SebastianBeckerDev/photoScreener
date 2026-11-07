@@ -53,6 +53,11 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "XmpCore": {
+        "type": "Transitive",
+        "resolved": "6.1.10.1",
+        "contentHash": "/Tp2/e39e7z8hLtS4TXt0FNNZHbf5yNFfHS0/59soXlgOzZlyRZivvzWpvujyaWkTWWgecp/1nHxkuc5vntn7A=="
+      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -99,7 +104,17 @@
       "photoscreener.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "MetadataExtractor": "[2.9.2, )",
           "PhotoScreener.Core": "[1.0.0, )"
+        }
+      },
+      "MetadataExtractor": {
+        "type": "CentralTransitive",
+        "requested": "[2.9.2, )",
+        "resolved": "2.9.2",
+        "contentHash": "lSLFUdPuSpyDh5ls1cFHRGSP9vxy/aRZFPaSMSxKpmgzl4lYhpsUd7+pcmcR3xEVjfS7Bsc2JJq5hAUc+nH+qw==",
+        "dependencies": {
+          "XmpCore": "6.1.10.1"
         }
       }
     },

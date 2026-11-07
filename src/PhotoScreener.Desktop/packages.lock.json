@@ -179,13 +179,28 @@
         "resolved": "2.88.9",
         "contentHash": "wb2kYgU7iy84nQLYZwMeJXixvK++GoIuECjU4ECaUKNuflyRlJKyiRhN1MAHswvlvzuvkrjRWlK0Za6+kYQK7w=="
       },
+      "XmpCore": {
+        "type": "Transitive",
+        "resolved": "6.1.10.1",
+        "contentHash": "/Tp2/e39e7z8hLtS4TXt0FNNZHbf5yNFfHS0/59soXlgOzZlyRZivvzWpvujyaWkTWWgecp/1nHxkuc5vntn7A=="
+      },
       "photoscreener.core": {
         "type": "Project"
       },
       "photoscreener.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "MetadataExtractor": "[2.9.2, )",
           "PhotoScreener.Core": "[1.0.0, )"
+        }
+      },
+      "MetadataExtractor": {
+        "type": "CentralTransitive",
+        "requested": "[2.9.2, )",
+        "resolved": "2.9.2",
+        "contentHash": "lSLFUdPuSpyDh5ls1cFHRGSP9vxy/aRZFPaSMSxKpmgzl4lYhpsUd7+pcmcR3xEVjfS7Bsc2JJq5hAUc+nH+qw==",
+        "dependencies": {
+          "XmpCore": "6.1.10.1"
         }
       }
     },

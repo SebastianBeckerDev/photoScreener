@@ -13,7 +13,7 @@ The replacement is in `src/`. On 2026-11-06 the user explicitly requested remova
 
 ## Windows verification
 
-Latest Release tests: 40 core/infrastructure and 19 Avalonia headless cases pass (59 total). Debug desktop tests also passed before the subsequent zoom/revision changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
+Latest Release tests: 45 core/infrastructure and 23 Avalonia headless cases pass (68 total). Debug desktop tests also passed before the subsequent zoom/revision/information changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
 
 Tests perform actual filesystem mutations and child-process interruption, rather than simulating a pick database. The unchanged legacy helper recognizes new completed exports. Kill/recovery phases cover staging, completed publication, before deletion and completed deletion. Cleanup preserves an unrelated staging file.
 
@@ -81,3 +81,15 @@ File revisions now include native change time (Windows `FILE_BASIC_INFO.ChangeTi
 Pointer-centered wheel zoom, bounded panning, double-click/Fit reset and reset on photo navigation are implemented. Zoom retains the visible image while requesting a higher-resolution refinement; percentages are relative to Fit, and the existing 3840-pixel longest-side decode limit remains. Tests send wheel/drag input, verify the anchored image coordinates, pan bounds, increased decoded resolution and immediate keyboard navigation. This is magnification of a bounded full-image preview; native-resolution cropped inspection beyond that limit is not yet implemented.
 
 A real Windows window smoke run (`artifacts/performance/zoom-window.json`, 40 actions and four stable samples) produced a rendered 300%-of-Fit screenshot with no export/maintenance errors. Sampled working set was 333.43 MiB during its diagnostic workload. The screenshot was inspected for image clipping, the full toolbar and virtualized strip. This short run is a rendering check, not reference-corpus performance acceptance.
+
+## Project, strip and photo-information follow-up
+
+Project scans publish the complete source roster for each finished folder. Changed revisions replace earlier rows/counts; missing originals leave the source count and their unmatched/older exports appear as preserved read-only entries, with Space disabled. Failed operations from older revisions retain their own completion/error row and can be superseded by a new explicit request. Source revision is checked again after staging verification, immediately before publication. Tests cover source replacement during a paused verification, rescan of changed/deleted originals, preserved exports and truthful failed work.
+
+The virtualized strip centers the selected thumbnail through deferred scroll adjustment, clamped to its extent. Tests verify middle/beginning/end placement and bounded realized controls. Resize/show-strip operations re-center the current item.
+
+Photo information uses pinned MetadataExtractor 2.9.2/XmpCore dependencies. One bounded background reader with a 256-entry cache reads EXIF capture time, focal length, exposure, ISO, aperture, camera/lens and GPS coordinates. An 8 MiB metadata read budget and 256-character field limits bound parsing/display work; missing/malformed data remains Unknown/unavailable. Read-only metadata access allows external writes/deletion and checks native identity/revision before/after reading. JPEG and PNG-after-IDAT fixtures verify exact capture values, signed GPS coordinates and unchanged source bytes; the worker survives a deleted cached source.
+
+The existing decode workers compute a sampled 256-bin preview-luminance histogram after publishing the focused image. It is not a RAW or full-resolution histogram. Information/histogram callbacks reject old photos/generations, and tests verify that missing fields clear and the histogram follows a different-colored next photo.
+
+`artifacts/performance/photo-information-window.json` is an executed real Windows window smoke (40 actions, four stable samples, eight generated 12 MP JPEGs with explicit synthetic EXIF/GPS fixtures). The rendered screenshot was inspected: capture values, all toolbar buttons, histogram, fitted image and strip are visible. No export/maintenance errors; sampled working set 253.35 MiB. This short run is not reference-workload performance evidence. Reproduce the fixture with `dotnet run --project tests/PhotoScreener.Performance -c Release -- artifacts/photo-info-corpus 8 4000 3000 --exif`.

@@ -89,6 +89,7 @@ public sealed class ExportStore(FolderComparer comparer) : IExportStore
                 throw new IOException("Staged copy failed content/identity verification.");
             token.ThrowIfCancellationRequested();
             if (!stillWanted()) throw new OperationCanceledException("Pick was superseded before publication.");
+            if (PathGuard.Revision(photo.Path) != photo.Revision) throw new IOException("Source changed before publication; refresh to review its current version.");
             var final = Path.Combine(binding.ExportRoot, LegacyExportName.FromDigest(photo.Name, md5Digest));
             PathGuard.ValidateNoLinks(final);
             if (File.Exists(final)) VerifyExisting(final);

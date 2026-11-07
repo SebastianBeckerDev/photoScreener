@@ -13,17 +13,33 @@ public partial class MainWindow
     private readonly Dictionary<string, PhotoRow> registered = new(PathGuard.Comparer);
     private readonly Dictionary<string, (int Total, int Picked, int Checking)> counts = new(PathGuard.Comparer);
     private readonly ObservableCollection<PhotoRow> operationRows = [];
-    private readonly Dictionary<string, HashSet<PhotoRow>> associations = [];
-    private string? AssociationKey(PhotoRow row) => row.Observation.Sha256 == null ? null : row.Binding.ExportRoot + "|" + row.Name + "|" + row.Observation.Sha256;
+    private readonly record struct AssociationId(string Root, string Name, string Digest);
+    private readonly Dictionary<AssociationId, HashSet<PhotoRow>> associations = [];
+    private readonly Dictionary<PhotoRow, AssociationId> rowAssociations = [];
+    private AssociationId? AssociationKey(PhotoRow row) => row.IsExportOnly || row.Observation.Sha256 == null ? null : new(OperatingSystem.IsWindows() ? row.Binding.ExportRoot.ToUpperInvariant() : row.Binding.ExportRoot, row.Name, row.Observation.Sha256);
+    private void ForgetAssociation(PhotoRow row)
+    {
+        if (!rowAssociations.Remove(row, out var key) || !associations.TryGetValue(key, out var group)) return;
+        group.Remove(row); if (group.Count == 0) associations.Remove(key);
+    }
     private void RegisterAssociation(PhotoRow row)
     {
-        if (AssociationKey(row) is not { } key) return;
+        if (AssociationKey(row) is not { } key) { ForgetAssociation(row); return; }
+        if (rowAssociations.GetValueOrDefault(row) != key) ForgetAssociation(row);
         if (!associations.TryGetValue(key, out var group)) associations[key] = group = [];
-        group.Add(row);
+        group.Add(row); rowAssociations[row] = key;
+    }
+    private void UnregisterRow(PhotoRow row)
+    {
+        if (registered.GetValueOrDefault(row.Photo.Path) != row) return;
+        registered.Remove(row.Photo.Path); ForgetAssociation(row);
+        var count = counts.GetValueOrDefault(row.Photo.Folder);
+        counts[row.Photo.Folder] = (count.Total - 1, count.Picked - (row.Picked == true ? 1 : 0), count.Checking - (!row.Picked.HasValue ? 1 : 0));
     }
     private void RegisterRow(PhotoRow row)
     {
-        if (registered.GetValueOrDefault(row.Photo.Path) == row) return;
+        if (row.IsExportOnly || registered.GetValueOrDefault(row.Photo.Path) == row) return;
+        if (registered.TryGetValue(row.Photo.Path, out var replaced)) UnregisterRow(replaced);
         registered[row.Photo.Path] = row; mutations?.RegisterPhoto(row.Photo, row.Binding);
         var previous = counts.GetValueOrDefault(row.Photo.Folder);
         counts[row.Photo.Folder] = (previous.Total + 1, previous.Picked + (row.Picked == true ? 1 : 0), previous.Checking + (!row.Picked.HasValue ? 1 : 0));
@@ -61,8 +77,12 @@ public partial class MainWindow
     }
     private partial void RequestMutation(PhotoRow row)
     {
+        if (row.IsExportOnly) return;
+        if (registered.TryGetValue(row.Photo.Path, out var live) && live.Photo.Revision != row.Photo.Revision)
+        { row.Fail("Source revision changed; review the current version before requesting a change."); return; }
         mutations ??= CreateMutations();
         RegisterRow(row);
+        foreach (var old in operationRows.Where(old => old != row && PathGuard.Comparer.Equals(old.Photo.Path, row.Photo.Path) && old.Intent.Sequence < row.Intent.Sequence).ToArray()) operationRows.Remove(old);
         var desired = row.Intent.Requested;
         if (!operationRows.Contains(row) && operationRows.Count < 1024) operationRows.Add(row);
         if (desired.HasValue && AssociationKey(row) is { } key && associations.TryGetValue(key, out var group))
@@ -79,10 +99,13 @@ public partial class MainWindow
         {
             foreach (var photo in result.Photos)
             {
-                if (!registered.TryGetValue(photo.Path, out var row) || row.Photo.Revision != photo.Revision) continue;
+                registered.TryGetValue(photo.Path, out var row);
+                if (row?.Photo.Revision != photo.Revision) row = operationRows.FirstOrDefault(item => PathGuard.Comparer.Equals(item.Photo.Path, photo.Path) && item.Photo.Revision == photo.Revision);
+                if (row == null) continue;
                 var newer = row.Intent.Sequence > result.Sequence;
                 if (!newer && result.Desired.HasValue) row.Intent.AdoptRequest(result.Desired.Value, result.Sequence);
-                row.Observe(result.Observation); SynchronizeFilteredRow(row);
+                row.Observe(result.Observation);
+                if (registered.GetValueOrDefault(row.Photo.Path) == row) SynchronizeFilteredRow(row);
                 RegisterAssociation(row);
                 if (result.Observation.Picked.HasValue)
                 { var target = row.Binding.ExportRoot; coordinator.RunIdle("watch:" + target, () => watchers.Watch(target)); }
@@ -110,7 +133,7 @@ public partial class MainWindow
     private partial void CancelPending()
     {
         mutations?.CancelAll();
-        foreach (var row in folders.Values.SelectMany(f => f)) { row.Intent.Cancel(); row.Notify(); }
+        foreach (var row in folders.Values.SelectMany(f => f).Concat(operationRows).Distinct()) { row.Intent.Cancel(); row.Notify(); }
         operationRows.Clear();
         if (current != null) Text("CurrentStatus", current.Status); Surface.Focus();
     }

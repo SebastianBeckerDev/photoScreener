@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../PhotoScreener.Tests/Fixtures/PhotoExifFixture.cs" Link="Fixtures/PhotoExifFixture.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" /><PackageReference Include="Avalonia.Headless.XUnit" />
     <ProjectReference Include="../../src/PhotoScreener.Desktop/PhotoScreener.Desktop.csproj" />

@@ -73,9 +73,11 @@ public partial class MainWindow
     }
     private void RecordReview(PhotoRow row, PhotoRow? cursor = null)
     {
+        if (row.IsExportOnly) return;
         if (!reviewed.TryGetValue(row.Photo.Folder, out var history)) reviewed[row.Photo.Folder] = history = [];
         history.Add(ReviewMetadataStore.RevisionKey(row.Photo));
         cursor ??= row;
+        if (cursor.IsExportOnly || !PathGuard.Comparer.Equals(cursor.Photo.Folder, row.Photo.Folder)) cursor = row;
         cursors[row.Photo.Folder] = cursor.Photo.Path;
         var review = new FolderReview(cursor.Name, cursor.Photo.Revision, filter, history.TakeLast(4096).ToArray());
         var protectedFolders = folders.Keys.ToArray();

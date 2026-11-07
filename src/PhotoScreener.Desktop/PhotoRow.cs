@@ -6,10 +6,11 @@ public sealed class PhotoRow(Photo photo, ExportBinding binding) : ObservableObj
 {
     public Photo Photo { get; } = photo;
     public ExportBinding Binding { get; } = binding;
+    public bool IsExportOnly { get; init; }
     public PickIntent Intent { get; } = new();
     public Observation Observation { get; private set; } = new(PickStatus.Checking, []);
     public string Name => Photo.Name;
-    public string Status => error ?? (Intent.UnknownParity ? "Checking · change queued" : Intent.Pending ? Intent.Requested == true ? "Copying…" : "Removing…" : Observation.Status.ToString());
+    public string Status => IsExportOnly ? "Unmatched / older export · preserved" : error ?? (Intent.UnknownParity ? "Checking · change queued" : Intent.Pending ? Intent.Requested == true ? "Copying…" : "Removing…" : Observation.Status.ToString());
     public bool? Picked => Intent.Observed;
     private string? error;
     public event Action<PhotoRow, bool?, bool?>? PickedChanged;

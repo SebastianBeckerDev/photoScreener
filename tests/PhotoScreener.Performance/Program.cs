@@ -1,11 +1,13 @@
 using SkiaSharp;
 using System.Text.Json;
+using PhotoScreener.TestFixtures;
 
-if (args.Length < 1) { Console.WriteLine("Usage: PhotoScreener.Performance <corpus-directory> [count=100] [width=4000] [height=3000]"); return; }
+if (args.Length < 1) { Console.WriteLine("Usage: PhotoScreener.Performance <corpus-directory> [count=100] [width=4000] [height=3000] [--exif]"); return; }
 var directory = Path.GetFullPath(args[0]); Directory.CreateDirectory(directory);
 var count = args.Length > 1 ? int.Parse(args[1]) : 100;
 var width = args.Length > 2 ? int.Parse(args[2]) : 4000;
 var height = args.Length > 3 ? int.Parse(args[3]) : 3000;
+var withExif = args.Contains("--exif");
 using var image = new SKBitmap(width, height);
 using var canvas = new SKCanvas(image);
 var random = new Random(813);
@@ -18,7 +20,8 @@ for (var i = 0; i < count; i++)
     paint.Color = SKColors.White; paint.TextSize = 160;
     canvas.DrawText($"Photo Screener diagnostic {i:D6}", 50, 200, paint);
     using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90);
-    using var file = File.Create(Path.Combine(directory, $"diagnostic-{i:D6}.JPG")); data.SaveTo(file);
+    using var file = File.Create(Path.Combine(directory, $"diagnostic-{i:D6}.JPG"));
+    if (withExif) file.Write(PhotoExifFixture.Jpeg(data.ToArray())); else data.SaveTo(file);
 }
-File.WriteAllText(Path.Combine(directory, "corpus.json"), JsonSerializer.Serialize(new { kind = "synthetic diagnostic, not representative photographic evidence", count, width, height, seed = 813 }));
+File.WriteAllText(Path.Combine(directory, "corpus.json"), JsonSerializer.Serialize(new { kind = "synthetic diagnostic, not representative photographic evidence", count, width, height, seed = 813, embeddedExifFixture = withExif }));
 Console.WriteLine($"Generated {count} {width}×{height} synthetic JPEGs in {directory}");
