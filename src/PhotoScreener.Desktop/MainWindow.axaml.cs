@@ -196,7 +196,9 @@ public partial class MainWindow : Window
         pickedContext.Cancel(); projectGeneration++;
         DiscoverProject(activeFolder);
         rows.Clear(); ClearFocus(); filter = ReviewFilter.All;
-        this.FindControl<ComboBox>("FilterBox")!.SelectedIndex = 0;
+        // A programmatic reset must not repopulate the old cached rows while the
+        // new folder collection is being established below.
+        revealing = true; FilterBox.SelectedIndex = 0; revealing = false;
         // SelectionChanged does not run when All was already selected. Folder loading
         // must establish keyboard focus independently, before the first photo arrives.
         Surface.Focus();

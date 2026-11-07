@@ -20,6 +20,7 @@ public partial class MainWindow
         TaskCompletionSource? fullReady = null; var focusedAt = 0d; var stableAt = 0d; var stable = false;
         var maxWorkingSet = 0L; var maxQueue = 0; var maxCache = 0L; var maxPending = 0; var maxRealized = 0;
         var errors = new List<string>(); var completed = 0; var totalOperations = 0;
+        var ignoredKeys = 0; var ignoredContexts = new List<object>();
         var maintenanceErrors = new List<string>();
         mutations!.MaintenanceError += error => { lock (maintenanceErrors) maintenanceErrors.Add(error.ToString()); };
         var sections = new Dictionary<string, List<double>>();
@@ -54,7 +55,32 @@ public partial class MainWindow
             {
                 await usable.Task.WaitAsync(TimeSpan.FromSeconds(20));
                 var firstUsable = clock.Elapsed.TotalMilliseconds;
-                Surface.Focus(); var inputStarted = clock.Elapsed.TotalMilliseconds;
+                object? metadataTree = null;
+                var treeOption = Array.IndexOf(arguments, "--metadata-tree");
+                if (treeOption >= 0)
+                {
+                    var treeRoot = Path.GetFullPath(arguments[treeOption + 1]);
+                    if (!await Task.Run(() => Directory.Exists(treeRoot))) throw new DirectoryNotFoundException(treeRoot);
+                    var reviewFolder = activeFolder!;
+                    loading.Cancel();
+                    DiscoverProject(treeRoot); ShowProjectPicks();
+                    var treeStarted = clock.Elapsed.TotalMilliseconds;
+                    while (!projectComplete)
+                    {
+                        if (clock.Elapsed.TotalMilliseconds - treeStarted > 300_000) throw new TimeoutException("Metadata tree scan did not complete in five minutes.");
+                        await Task.Delay(20);
+                    }
+                    var treeFolders = folders.Keys.Where(folder => PhotoScreener.Infrastructure.PathGuard.Within(folder, treeRoot)).ToArray();
+                    metadataTree = new { root = treeRoot, folders = treeFolders.Length, photos = treeFolders.Sum(folder => folders[folder].Count), picked = treeFolders.Sum(folder => counts[folder].Picked), unavailableFolders, scanMs = clock.Elapsed.TotalMilliseconds - treeStarted };
+                    var reviewReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void ReturnedPreview(PhotoRow row, bool full) { if (PhotoScreener.Infrastructure.PathGuard.Comparer.Equals(row.Photo.Folder, reviewFolder)) reviewReady.TrySetResult(); }
+                    PreviewPublished += ReturnedPreview;
+                    try { await OpenFolder(reviewFolder); await reviewReady.Task.WaitAsync(TimeSpan.FromSeconds(20)); }
+                    finally { PreviewPublished -= ReturnedPreview; }
+                }
+                if (activeFolder != null && !projectView && filter == PhotoScreener.Core.ReviewFilter.All && rows.Count != folders[activeFolder].Count)
+                    throw new InvalidOperationException("The visible All list does not match the current folder collection.");
+                Activate(); Surface.Focus(); var inputStarted = clock.Elapsed.TotalMilliseconds;
                 await Task.Run(async () =>
                 {
                     using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
@@ -67,14 +93,21 @@ public partial class MainWindow
                             var began = clock.Elapsed.TotalMilliseconds; deliveries.Add(began - inputStarted);
                             frameInputs.Enqueue(arrived);
                             var key = ordinal % 5 == 0 ? Key.Space : ordinal / 100 % 2 == 0 ? Key.Right : Key.Left;
-                            Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = Surface });
+                            var keyEvent = new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = Surface };
+                            Surface.RaiseEvent(keyEvent);
                             Surface.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyUpEvent, Key = key, Source = Surface });
+                            if (!keyEvent.Handled)
+                            {
+                                ignoredKeys++;
+                                if (ignoredContexts.Count < 10) ignoredContexts.Add(new { ordinal, key = key.ToString(), active = IsActive, surfaceFocused = Surface.IsFocused, stripFocused = Strip.IsKeyboardFocusWithin, current = current?.Photo.Path });
+                            }
                             handlers.Add(clock.Elapsed.TotalMilliseconds - began); feedback.Add(clock.Elapsed.TotalMilliseconds - arrived);
                             probe.InvalidateVisual(); Interlocked.Increment(ref completed);
                         }, DispatcherPriority.Input);
                     }
                 });
                 while (completed < requestedActions) await Task.Delay(10);
+                if (ignoredKeys != 0) throw new InvalidOperationException($"The review surface ignored {ignoredKeys} of {completed} injected keys. This is not a valid input-feedback run.");
                 var inputElapsed = (clock.Elapsed.TotalMilliseconds - inputStarted) / 1000;
                 await mutations.DrainAsync().WaitAsync(TimeSpan.FromSeconds(60));
                 var mixedSeconds = (clock.Elapsed.TotalMilliseconds - inputStarted) / 1000;
@@ -95,9 +128,9 @@ public partial class MainWindow
                     framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
                     runtimeAssembly = typeof(object).Assembly.Location,
                     cpu = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"), processors = Environment.ProcessorCount,
-                    source = activeFolder, export = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot, photos = rows.Count,
+                    source = activeFolder, export = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot, photos = rows.Count, metadataTree,
                     previewPhysical = new { width = Surface.Bounds.Width * RenderScaling, height = Surface.Bounds.Height * RenderScaling },
-                    firstUsableMs = firstUsable, actions = completed, inputElapsedSeconds = inputElapsed, deliveredPerSecond = completed / inputElapsed,
+                    firstUsableMs = firstUsable, actions = completed, ignoredKeys, inputElapsedSeconds = inputElapsed, deliveredPerSecond = completed / inputElapsed,
                     feedback = Summary(feedback), handler = Summary(handlers), frameSubmission = Summary(frames),
                     sections = sections.ToDictionary(e => e.Key, e => Summary(e.Value)),
                     navigatingLowPublication = Summary(lows), navigatingFullPublication = Summary(fulls),
@@ -134,7 +167,7 @@ public partial class MainWindow
                     await Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(path)!); snapshot.Save(path); });
                 }
             }
-            catch (Exception e) { sampling.Stop(); await Write(new { error = e.ToString(), actions = completed, folder = FolderStatus.Text }); }
+            catch (Exception e) { sampling.Stop(); await Write(new { error = e.ToString(), actions = completed, ignoredKeys, ignoredContexts, folder = FolderStatus.Text }); }
             CancelPending(); Close();
         }
         Task Write(object result) => Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!); File.WriteAllText(output, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })); });

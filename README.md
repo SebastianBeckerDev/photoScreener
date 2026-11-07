@@ -28,6 +28,15 @@ pwsh -File scripts/Benchmark-Rewrite.ps1 -SourceFolder artifacts/corpus
 dotnet run --project tests/PhotoScreener.Performance -c Release -- artifacts/corpus 100 4000 3000
 ```
 
+For metadata scaling diagnostics, generate a small-image tree and preload its actual project rows before mixed-load review:
+
+```
+dotnet run --project tests/PhotoScreener.Performance -c Release --no-restore -- artifacts/corpus-tree-100000 100000 64 48 --folders 100 --export-samples 8
+pwsh -File scripts/Benchmark-Rewrite.ps1 -SourceFolder artifacts/corpus-10000 -MetadataTree artifacts/corpus-tree-100000 -Actions 1200 -StableSamples 100 -Report artifacts/performance/metadata-tree-window.json
+```
+
+The report includes scanned file/folder/pick counts and memory sampled during both the scan and subsequent review. This small-image tree tests metadata scaling; the photographic reference corpus remains a separate acceptance workload. Benchmark builds use `artifacts/benchmark-build` so they can run alongside the development app.
+
 Windows self-contained output: `artifacts/publish/win-x64/PhotoScreener.Desktop.exe`; zip: `artifacts/PhotoScreener-win-x64.zip`.
 For the development launcher, run `buildAndRunRewrite.bat "D:\Photos\Trip"`.
 On an Apple Silicon Mac, run `bash scripts/package-macos.sh`; the initial deployment profile is macOS 14+. Set `SIGNING_IDENTITY` to sign; pass `--notarize` with an explicitly configured `NOTARY_PROFILE` to submit to Apple. No credentials are stored in this repository.

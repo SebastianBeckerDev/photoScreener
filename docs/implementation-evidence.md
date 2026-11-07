@@ -13,7 +13,7 @@ The replacement is in `src/`. On 2026-11-06 the user explicitly requested remova
 
 ## Windows verification
 
-Latest Release tests: 49 core/infrastructure and 23 Avalonia headless cases pass (72 total). Debug desktop tests also passed before the subsequent zoom/revision/information changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
+Latest Release tests: 49 core/infrastructure and 24 Avalonia headless cases pass (73 total). Debug desktop tests also passed before the subsequent zoom/revision/information changes. Windows-only native sharing/rename cases are not evidence for macOS. Full disk, physically unplugged devices and network volumes have not been exercised.
 
 The 2026-11-07 binding safety follow-up checks actual directory identity before using warm folder rows or mutating a captured target, and again after first creating a missing export root. Different path keys for the same physical directory are rejected with a consistent-spelling message. Windows paths containing trailing dots/spaces and case-sensitive directories that the session's case-insensitive keys cannot represent fail explicitly. Native tests use an extended-path alias, a trailing-dot alias, and an actual NTFS case-sensitive directory with two distinct `a.JPG`/`A.JPG` originals and `one`/`One` subdirectories. Rejected requests preserve the sources and existing export copy; library discovery reports the folder collision. Ordinary Windows case variants remain valid. The Mac case-sensitive/insensitive branch is runnable but not executed here. The published-package measurements below precede this follow-up; the Debug app is rebuilt with it.
 
@@ -40,9 +40,23 @@ Latest self-contained package, including photo information and centered thumbnai
 
 These diagnostics do not establish representative photo-corpus, uncached OS/SSD, physical-display or Mac acceptance. Older runs below document earlier findings and are superseded by this report for the current Windows package.
 
+The latest framework-dependent tree-scale run is `artifacts/performance/metadata-tree-window-fixed.json` (2026-11-07, .NET 10.0.14). It retained 100,000 actual source rows across 100 image folders plus their empty project root, recovered 800 fixture exports, and then returned to the mixed 10,000-file folder for review. Tree discovery/comparison took 47.463 seconds and remained separate from first usable preview (264.305 ms, one opening sample). The tree files are 64 × 48 JPEG diagnostics, not the photographic reference workload.
+
+| Tree-scale mixed review | Result |
+| --- | --- |
+| Inputs / ignored keys | 1,200 in 60.011 seconds / zero |
+| Input feedback p95 / p99 | 1.003 / 3.020 ms |
+| Drawing submission p95 / p99 | 15.679 / 17.014 ms |
+| Peak sampled working set, including tree scan and review | 486.660 MiB |
+| Cache / image queue / realized-thumbnail maxima | 63.883 MiB / 14 / 11 |
+| Mutation results / copied bytes / hash-read bytes | 240 / 202,584,237 / 239,145,501 |
+| JSON writes / export or maintenance errors | 406 / none |
+
+The first tree run (`metadata-tree-window.json`) exposed duplicate visible rows when a programmatic All-filter reset repopulated an old cached folder during reopening. It also recorded fewer processed review keys than injected keys. That report is invalid as a mixed-input acceptance run. Folder initialization now suppresses the filter callback, a headless regression checks unique rows and immediate arrow input after returning from Project Picked, and the runner verifies the All list against its folder collection. It activates the review window at injection start and rejects any run containing ignored keys, reporting the first ignored focus contexts. The fixed run above has exactly 10,000 visible rows and all 1,200 keys handled. No representative-corpus or Mac gate is inferred.
+
 Hardware: Core i5-1345U, 10 physical/12 logical cores; 16,849,256,448 bytes RAM. D: is a Samsung PM9B1 1 TB NVMe SSD. Windows 10.0.26300; SDK 10.0.303; framework-dependent runs use .NET 10.0.14. Physical preview 1439 × 647, below the required 1920 × 1080.
 
-Diagnostic corpora: 100 generated 4000 × 3000 JPEGs (12 MP, roughly 1.7 MB each); a 10,000-file folder containing those 100 plus 9,900 64 × 48 JPEGs. Seed 813, JPEG quality 90. These are synthetic diagnostics, not the required 10,000-photo 12–45 MP corpus or 100,000-file tree. The mixed folder's original generator metadata describes its small images; its actual mixed composition is recorded here.
+Diagnostic corpora: 100 generated 4000 × 3000 JPEGs (12 MP, roughly 1.7 MB each); a 10,000-file folder containing those 100 plus 9,900 64 × 48 JPEGs; and the 100,000-file small-image tree described above. Seed 813, JPEG quality 90. These are synthetic diagnostics, not the required 12–45 MP photographic corpus/tree. The mixed folder's original generator metadata describes its small images; its actual mixed composition is recorded here.
 
 `artifacts/performance/final-window.json`: 1,200 routed-key actions in 60.005 seconds (19.998/s), with copies, deletion, hashing, warming and JSON writes:
 

@@ -33,6 +33,27 @@ public sealed class ProjectTests
     }
     private static void Click(MainWindow window, string name) => window.FindControl<Button>(name)!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     [AvaloniaFact]
+    public async Task ReturningFromProjectPicksAndRefreshingDoesNotDuplicateCachedFolderRows()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-project-return-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        for (var i = 0; i < 3; i++) Image(Path.Combine(root, $"{i}.JPG"), SKColors.Coral);
+        var window = new MainWindow(); window.Show();
+        try
+        {
+            await window.OpenFolder(root);
+            Click(window, "ProjectPickedButton");
+            await window.OpenFolder(root, true);
+            var strip = window.FindControl<ListBox>("Filmstrip")!;
+            var shown = strip.Items.Cast<PhotoRow>().ToArray();
+            Assert.Equal(3, shown.Length);
+            Assert.Equal(3, shown.Select(row => row.Photo.Path).Distinct(PathGuard.Comparer).Count());
+            var before = Assert.IsType<PhotoRow>(strip.SelectedItem);
+            window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+            Assert.NotSame(before, strip.SelectedItem);
+        }
+        finally { window.Close(); await Wait(() => !window.IsVisible); Directory.Delete(root, true); }
+    }
+    [AvaloniaFact]
     public async Task ReplacedSourceRevisionRetainsTheOldFailureAndAcceptsANewRequest()
     {
         var root = Path.Combine(Path.GetTempPath(), "photoscreener-version-work-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
