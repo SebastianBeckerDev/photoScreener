@@ -281,7 +281,11 @@ public sealed class WindowTests
             File.WriteAllText(Path.Combine(root, "a.JPG"), "not an image"); WriteImage(root, "b.JPG", 64, 48);
             var window = new MainWindow(); window.Show(); await window.OpenFolder(root);
             var strip = window.FindControl<ListBox>("Filmstrip")!; strip.SelectedItem = strip.Items.Cast<PhotoRow>().Single(r => r.Name == "a.JPG");
-            for (var i = 0; i < 150 && !strip.GetVisualDescendants().OfType<ThumbnailView>().Any(t => t.DataContext is PhotoRow { Name: "b.JPG" } && t.Source != null); i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            // The two workers may finish the good tile before the focused error callback.
+            // Wait for both independent outcomes instead of assuming their completion order.
+            for (var i = 0; i < 150 && (window.FindControl<TextBlock>("PreviewMessage")!.Text == "Loading…" ||
+                !strip.GetVisualDescendants().OfType<ThumbnailView>().Any(t => t.DataContext is PhotoRow { Name: "b.JPG" } && t.Source != null)); i++)
+            { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
             Assert.Contains(strip.GetVisualDescendants().OfType<ThumbnailView>(), t => t.DataContext is PhotoRow { Name: "b.JPG" } && t.Source != null);
             Assert.NotEqual("Loading…", window.FindControl<TextBlock>("PreviewMessage")!.Text);
             Assert.Equal("a.JPG", window.FindControl<TextBlock>("CurrentName")!.Text);
