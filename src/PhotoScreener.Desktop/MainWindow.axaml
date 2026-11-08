@@ -31,6 +31,15 @@
       <Grid>
         <local:ZoomImage Name="Preview" Margin="8" />
         <Border Margin="16" Padding="7,4" CornerRadius="4" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#CC111318" IsHitTestVisible="False"><TextBlock Name="ZoomStatus" Text="Fit" Foreground="#DCE3EC" /></Border>
+        <Border Name="PreviewPending" IsVisible="False" IsHitTestVisible="False" HorizontalAlignment="Right" VerticalAlignment="Top"
+                Margin="16" Padding="12,10" MaxWidth="380" CornerRadius="8" Background="#EE111318" BorderBrush="#39505A" BorderThickness="1">
+          <StackPanel Spacing="6">
+            <TextBlock Name="PendingPreviewTarget" FontSize="14" FontWeight="SemiBold" Foreground="#77EFD3" TextWrapping="Wrap" />
+            <TextBlock Name="PendingPreviewShown" FontSize="11" Foreground="#BBC5D4" TextWrapping="Wrap" />
+            <TextBlock Name="PendingPreviewError" IsVisible="False" FontSize="11" Foreground="#F2B2A8" TextWrapping="Wrap" MaxHeight="100" />
+            <ProgressBar Name="PendingPreviewProgress" Height="2" IsIndeterminate="True" Foreground="#50E5C3" Margin="0,3,0,0" />
+          </StackPanel>
+        </Border>
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18" IsHitTestVisible="False">
           <StackPanel Name="WelcomeBrand" HorizontalAlignment="Center" Spacing="10">
             <Image Source="avares://PhotoScreener.Desktop/Assets/lumapick.png" Width="104" Height="104" />

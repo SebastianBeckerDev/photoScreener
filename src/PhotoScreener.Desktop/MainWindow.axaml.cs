@@ -23,6 +23,8 @@ public partial class MainWindow : Window
     private readonly SourceCatalog catalog = new();
     private CancellationTokenSource loading = new();
     private ImageLease? previewLease;
+    private Photo? displayedPhoto;
+    private bool displayedFull;
     private PhotoRow? current;
     private string? activeFolder;
     private long focusGeneration, sequence, interactionGeneration;
@@ -37,19 +39,20 @@ public partial class MainWindow : Window
     private Control Surface => this.FindControl<Control>("ReviewSurface")!;
     private void Text(string name, string value) => this.FindControl<TextBlock>(name)!.Text = value;
     public MainWindow() : this([]) { }
-    public MainWindow(string[] args, SessionSettingsStore? settings = null)
+    public MainWindow(string[] args, SessionSettingsStore? settings = null) : this(args, settings, null) { }
+    internal MainWindow(string[] args, SessionSettingsStore? settings, PreviewScheduler? images)
     {
         arguments = args;
         sessionSettings = args.Contains("--benchmark") ? null : settings;
         var cacheOption = args.Contains("--benchmark") ? Array.IndexOf(args, "--cache-dir") : -1;
-        Images = new(cacheOption >= 0 && cacheOption + 1 < args.Length ? args[cacheOption + 1] : null);
+        Images = images ?? new(cacheOption >= 0 && cacheOption + 1 < args.Length ? args[cacheOption + 1] : null);
         InitializeComponent();
         InitializeInformation();
         comparer.ForegroundPending = () => Images.ForegroundPending; mutations = CreateMutations();
         InitializeReconciliation();
         Strip.ItemsSource = rows;
         Preview.AddHandler(PointerPressedEvent, (_, _) => Surface.Focus(), handledEventsToo: true);
-        Preview.ZoomChanged += () => { Text("ZoomStatus", Preview.Zoom == 1 ? "Fit" : $"{Preview.Zoom * 100:0}% of fit"); RequestPreview(true); };
+        Preview.ZoomChanged += () => { Text("ZoomStatus", Preview.Zoom == 1 ? "Fit" : $"{Preview.Zoom * 100:0}% of fit"); RequestPreview(); };
         this.FindControl<Button>("ZoomFitButton")!.Click += (_, _) => { Preview.ResetView(true); Surface.Focus(); };
         this.FindControl<Button>("OpenButton")!.Click += async (_, _) => await ChooseSource();
         this.FindControl<Button>("TargetButton")!.Click += async (_, _) => await ChooseTarget();
@@ -84,7 +87,7 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, HandleKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, (_, e) => { if (e.Key == Key.Space) spaceDown = false; }, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => spaceDown = false;
-        Surface.SizeChanged += (_, _) => { if (current != null) { RequestPreview(true); QueueStripScroll(current); } };
+        Surface.SizeChanged += (_, _) => { if (current != null) { RequestPreview(); QueueStripScroll(current); } };
         Closing += async (_, e) =>
         {
             if (closing) return;
@@ -328,21 +331,45 @@ public partial class MainWindow : Window
             }, DispatcherPriority.Loaded);
         }, DispatcherPriority.Background);
     }
-    private void RequestPreview() => RequestPreview(false);
-    private void RequestPreview(bool preserveCurrent)
+    private void RequestPreview()
     {
         if (current == null) return;
         var row = current; var focus = ++focusGeneration; var context = ImageContext;
-        if (!preserveCurrent) Timed("previous-preview-release", () => { Preview.Source = null; previewLease?.Dispose(); previewLease = null; });
-        if (previewLease == null) Text("PreviewMessage", "Loading…");
-        var fullPublished = preserveCurrent && previewLease != null;
+        var retainingPrevious = previewLease != null && displayedPhoto != row.Photo;
+        PreviewPending.IsVisible = retainingPrevious;
+        Preview.Opacity = retainingPrevious ? .72 : 1;
+        Preview.IsHitTestVisible = !retainingPrevious;
+        PendingPreviewProgress.IsVisible = retainingPrevious;
+        PendingPreviewError.IsVisible = false;
+        if (retainingPrevious)
+        {
+            Text("PendingPreviewTarget", $"Loading {row.Name}…");
+            Text("PendingPreviewShown", $"Still showing {displayedPhoto!.Name}");
+        }
+        Text("PreviewMessage", previewLease == null ? "Loading…" : "");
+        // A retained full-quality image belongs to the old photo. It must never
+        // suppress the new photo's quick preview, even during resize/zoom requests.
+        var fullPublished = previewLease != null && displayedPhoto == row.Photo && displayedFull;
         void Publish(ImageLease? lease, string? error, bool full) => Dispatcher.UIThread.Post(() =>
         {
             if (closing || focus != focusGeneration || context != ImageContext || current != row || !full && fullPublished)
             { lease?.Dispose(); return; }
-            if (lease == null) { if (previewLease == null) { Text("PreviewMessage", error ?? "Preview unavailable"); Images.ViewportReady(); } return; }
+            if (lease == null)
+            {
+                if (previewLease == null) Text("PreviewMessage", error ?? "Preview unavailable");
+                else if (displayedPhoto != row.Photo)
+                {
+                    Text("PendingPreviewTarget", $"Preview unavailable: {row.Name}");
+                    Text("PendingPreviewError", error ?? "Could not load this photo.");
+                    PendingPreviewError.IsVisible = true; PendingPreviewProgress.IsVisible = false;
+                }
+                Images.ViewportReady(); return;
+            }
             if (full) fullPublished = true;
-            Preview.Source = null; previewLease?.Dispose(); previewLease = lease; Preview.Source = lease.Bitmap;
+            var previous = previewLease;
+            Preview.Source = lease.Bitmap; previewLease = lease; displayedPhoto = row.Photo; displayedFull = full;
+            Preview.Opacity = 1; Preview.IsHitTestVisible = true; PreviewPending.IsVisible = false;
+            previous?.Dispose();
             Text("PreviewMessage", ""); Images.ViewportReady();
             PreviewPublished?.Invoke(row, full);
         }, DispatcherPriority.Render);
@@ -354,10 +381,12 @@ public partial class MainWindow : Window
     private int PreviewSide() => Math.Clamp((int)(Math.Max(Surface.Bounds.Width, Surface.Bounds.Height) * RenderScaling * Preview.Zoom), 1024, 3840);
     private void ClearFocus()
     {
+        Images.ClearFocus();
         WelcomeBrand.IsVisible = true;
         ClearInformation();
         Preview.ResetView(); Text("ZoomStatus", "Fit");
-        current = null; focusGeneration++; Preview.Source = null; previewLease?.Dispose(); previewLease = null;
+        current = null; focusGeneration++; Preview.Source = null; previewLease?.Dispose(); previewLease = null; displayedPhoto = null; displayedFull = false;
+        Preview.Opacity = 1; Preview.IsHitTestVisible = true; PreviewPending.IsVisible = false;
         Text("CurrentName", ""); Text("CurrentStatus", ""); Text("PreviewMessage", "No photos in this view");
     }
     private void ApplyFilter()

@@ -15,7 +15,7 @@ public partial class MainWindow
         this.FindControl<Button>("InfoButton")!.Click += (_, _) =>
         {
             InfoPanel.IsVisible = !InfoPanel.IsVisible;
-            if (InfoPanel.IsVisible && current != null) { LoadInformation(current); RequestPreview(true); }
+            if (InfoPanel.IsVisible && current != null) { LoadInformation(current); RequestPreview(); }
             Surface.Focus();
         };
         Images.HistogramReady += (photo, context, histogram) => Dispatcher.UIThread.Post(() =>

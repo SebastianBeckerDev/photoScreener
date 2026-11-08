@@ -16,9 +16,11 @@ public static class ScaledDecoder
     private static readonly ConcurrentBag<SKData> EncodedBuffers = [];
     public static Bitmap Decode(string path, int longestSide, CancellationToken token, bool quickPreview = false)
     {
+        token.ThrowIfCancellationRequested();
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         using var stream = new SKManagedStream(input);
         using var headerCodec = SKCodec.Create(stream) ?? throw new InvalidDataException("Unsupported or damaged JPEG/PNG.");
+        token.ThrowIfCancellationRequested();
         // JPEG entropy decoding performs many small stream reads. A bounded
         // native encoded buffer avoids managed callbacks throughout that work.
         // Two reusable buffers reserve at most 80 MiB, avoiding large-allocation

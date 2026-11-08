@@ -12,11 +12,13 @@ These are three different things:
 
 | Concept | What it means | What changes it |
 | --- | --- | --- |
-| Focused photo | The photo shown in the main preview. | Left/Right, a thumbnail, or folder navigation. |
+| Focused photo | The active row whose preview is requested. While it loads, the previous image remains visible with an explicit loading/previous-image label. | Left/Right, a thumbnail, or folder navigation. |
 | Requested pick | The selection you want after pending work finishes. | A distinct Space press. |
 | Observed pick | The last confirmed result from checking export files. | Background comparison or a completed mutation. |
 
 Left/Right never pick or unpick. Space stays on the same photo; held-key repeats are suppressed. Space switches a Picked/Unpicked filter or Project picks back to the photo's **All** view so the active photo remains visible.
+
+The selected row and displayed bitmap can temporarily differ during loading. The retained image is dimmed and labelled with its own filename; the badge also names the newly selected photo. Space applies to that selected row, while zoom/panning is paused until its preview arrives. A loading failure remains explicit, and a late result from a skipped photo cannot replace the current selection.
 
 ## Every `PickStatus` value
 
