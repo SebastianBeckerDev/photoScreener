@@ -105,7 +105,9 @@ public sealed class MutationTests : IDisposable
         };
         coordinator.Submit(new(photo, Binding, false, false, 1));
         await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.True(inserted); Assert.NotNull(result!.Error); Assert.True(result.Observation.Picked);
+        Assert.True(inserted, $"Deletion phase was not reached: {result?.Error}; {result?.Observation}");
+        Assert.NotNull(result!.Error);
+        Assert.True(result.Observation.Picked, $"Remaining copy was not observed Picked: {result.Error}; {result.Observation}");
         Assert.Equal("abc", File.ReadAllText(Path.Combine(Binding.ExportRoot, "a.abCD.JPG")));
     }
     [Fact] public void CopyDeleteRepickIsLegacyReadableAndSourceReadOnly()

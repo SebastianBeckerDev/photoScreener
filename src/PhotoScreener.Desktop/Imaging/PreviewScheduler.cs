@@ -138,7 +138,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
                 var keyForDisk = Key(request);
                 var bitmap = request.Side == 160 && request.Photo.Revision.ChangeToken != null ? diskCache.Read(keyForDisk) : null;
                 var diskHit = bitmap != null;
-                bitmap ??= ScaledDecoder.Decode(request.Photo.Path, request.Side, stop.Token);
+                bitmap ??= ScaledDecoder.Decode(request.Photo.Path, request.Side, stop.Token, quickPreview: !request.Full);
                 if (PathGuard.Revision(request.Photo.Path) != request.Photo.Revision) { bitmap.Dispose(); throw new IOException("Source changed during preview decoding."); }
                 var image = new SharedImage(bitmap);
                 lock (gate)

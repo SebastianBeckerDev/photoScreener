@@ -1,11 +1,12 @@
-param([Parameter(Mandatory)][string]$SourceFolder, [int]$Actions = 1200, [int]$StableSamples = 30, [string]$Report = 'artifacts/performance/window.json', [string]$Screenshot, [string]$MetadataTree)
+param([Parameter(Mandatory)][string]$SourceFolder, [int]$Actions = 1200, [int]$StableSamples = 30, [string]$Report = 'artifacts/performance/window.json', [string]$Screenshot, [string]$MetadataTree, [switch]$PrivateSource, [int]$PreviewWidth = 0, [int]$PreviewHeight = 0)
 $ErrorActionPreference = 'Stop'
 $rewriteRoot = Split-Path -Parent $PSScriptRoot
 $benchmarkBuild = Join-Path $rewriteRoot 'artifacts/benchmark-build'
 dotnet build (Join-Path $rewriteRoot 'src/PhotoScreener.Desktop/PhotoScreener.Desktop.csproj') -c Release --no-restore --disable-build-servers "-p:OutputPath=$benchmarkBuild/"
 if ($LASTEXITCODE -ne 0) { throw 'Benchmark build failed.' }
-$target = Join-Path $rewriteRoot ('artifacts/benchmark-exports/' + [Guid]::NewGuid().ToString('N'))
-$cache = Join-Path $rewriteRoot ('artifacts/benchmark-cache/' + [Guid]::NewGuid().ToString('N'))
+$benchmarkDataRoot = if ($PrivateSource) { Join-Path ([IO.Path]::GetTempPath()) ('photoscreener-private-benchmark-' + [Guid]::NewGuid().ToString('N')) } else { Join-Path $rewriteRoot 'artifacts' }
+$target = Join-Path $benchmarkDataRoot ('benchmark-exports/' + [Guid]::NewGuid().ToString('N'))
+$cache = Join-Path $benchmarkDataRoot ('benchmark-cache/' + [Guid]::NewGuid().ToString('N'))
 $reportPath = if ([IO.Path]::IsPathRooted($Report)) { $Report } else { Join-Path $rewriteRoot $Report }
 $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $benchmarkBuild 'PhotoScreener.Desktop.exe'))
 $start.UseShellExecute = $false
@@ -13,6 +14,7 @@ $start.CreateNoWindow = $true
 foreach ($argument in @([IO.Path]::GetFullPath($SourceFolder), '--export', $target, '--benchmark', '--cache-dir', $cache, '--actions', "$Actions", '--stable', "$StableSamples", '--report', $reportPath)) { $start.ArgumentList.Add($argument) }
 if ($Screenshot) { $start.ArgumentList.Add('--screenshot'); $start.ArgumentList.Add([IO.Path]::GetFullPath($Screenshot)) }
 if ($MetadataTree) { $start.ArgumentList.Add('--metadata-tree'); $start.ArgumentList.Add([IO.Path]::GetFullPath($MetadataTree)) }
+if ($PreviewWidth -gt 0 -and $PreviewHeight -gt 0) { foreach ($argument in @('--preview-width', "$PreviewWidth", '--preview-height', "$PreviewHeight")) { $start.ArgumentList.Add($argument) } }
 $benchmarkProcess = [Diagnostics.Process]::Start($start)
 $benchmarkProcess.WaitForExit()
 if ($benchmarkProcess.ExitCode -ne 0) { throw "Window failed: $($benchmarkProcess.ExitCode)" }

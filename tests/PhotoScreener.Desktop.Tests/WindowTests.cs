@@ -292,7 +292,7 @@ public sealed class WindowTests
         var bytes = encoded.ToArray(); File.WriteAllBytes(path, [.. bytes[..2], .. exif, .. bytes[2..]]);
         try
         {
-            using var low = ScaledDecoder.Decode(path, 100, default); using var full = ScaledDecoder.Decode(path, 400, default);
+            using var low = ScaledDecoder.Decode(path, 100, default, quickPreview: true); using var full = ScaledDecoder.Decode(path, 400, default);
             Assert.Equal(swapped ? new PixelSize(50, 100) : new PixelSize(100, 50), low.PixelSize);
             Assert.Equal(swapped ? new PixelSize(200, 400) : new PixelSize(400, 200), full.PixelSize);
             int[][] quadrants = [[0,1,2,3], [1,0,3,2], [3,2,1,0], [2,3,0,1], [0,2,1,3], [2,0,3,1], [3,1,2,0], [1,3,0,2]];

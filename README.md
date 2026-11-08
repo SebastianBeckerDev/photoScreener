@@ -40,8 +40,16 @@ The report includes scanned file/folder/pick counts and memory sampled during bo
 Windows self-contained output: `artifacts/publish/win-x64/PhotoScreener.Desktop.exe`; zip: `artifacts/PhotoScreener-win-x64.zip`.
 For the development launcher, run `buildAndRunRewrite.bat "D:\Photos\Trip"`.
 On an Apple Silicon Mac, run `bash scripts/package-macos.sh`; the initial deployment profile is macOS 14+. Set `SIGNING_IDENTITY` to sign; pass `--notarize` with an explicitly configured `NOTARY_PROFILE` to submit to Apple. No credentials are stored in this repository.
+Run `bash scripts/test-macos-package.sh` for a short functional check of the assembled bundle with installed-runtime lookup disabled. It creates synthetic fixtures under ignored `artifacts/`, starts the actual app window, checks all injected keys and export errors, and verifies the bundled runtime. It does not establish representative photo performance or signed installation acceptance.
 From Windows, `pwsh -File scripts/Publish-Rewrite.ps1 -Runtime osx-arm64` followed by `python scripts/Assemble-MacBundle.py` produces an unsigned `.app` zip with native architecture/minimum-version inspection. It still requires execution and signing checks on a Mac.
 
 Benchmark scripts use a fresh explicit export target under `artifacts/benchmark-exports`, preserving an existing review's export selection. Keep representative photos outside generated build output. The real-window runner records fixed-rate keyboard arrival/feedback, drawing submission, stable low/full timings, queue/cache/control counts, working set, copied/hash bytes and errors. Cold decoded-cache samples do not establish cold OS/SSD measurements.
+
+For a private photographic corpus, add `-PrivateSource` to keep exported copies and thumbnail cache in a fresh user-temporary directory outside the repository. Reports still contain local source/target paths; keep them under ignored `artifacts/` and publish only aggregate results. Request reference-sized rendering with `-PreviewWidth 1920 -PreviewHeight 1080`; the report records the actual physical-pixel surface, which the window manager may constrain. Header inspection reads at most 100 evenly spaced image headers without decoding or changing originals:
+
+```
+dotnet run --project tests/PhotoScreener.Performance -c Release -- --inspect "E:\Photos\Trip"
+pwsh -File scripts/Benchmark-Rewrite.ps1 -SourceFolder "E:\Photos\Trip" -PrivateSource -PreviewWidth 1920 -PreviewHeight 1080 -Actions 1200 -StableSamples 100 -Report artifacts/performance/private-window.json
+```
 
 See [implementation evidence](docs/implementation-evidence.md) for executed results and outstanding acceptance gates. Windows/macOS reference-corpus performance and the Mac installed/signed checks require the documented hardware/corpus and a Mac runner.

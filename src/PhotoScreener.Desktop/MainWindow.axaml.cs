@@ -118,7 +118,11 @@ public partial class MainWindow : Window
             // Window initialization can assign the first toolbar control after Opened.
             // Restore review focus once that initial layout/focus work has finished.
             Dispatcher.UIThread.Post(() => { if (!closing) Surface.Focus(); }, DispatcherPriority.Loaded);
-            if (args.Contains("--benchmark")) StartBenchmark();
+            if (args.Contains("--benchmark"))
+            {
+                await ConfigureBenchmarkViewport();
+                StartBenchmark();
+            }
             if (args.FirstOrDefault(a => !a.StartsWith("--")) is { } source)
             {
                 var exportOption = Array.IndexOf(args, "--export");

@@ -10,6 +10,24 @@ using PhotoScreener.Desktop.Diagnostics;
 namespace PhotoScreener.Desktop;
 public partial class MainWindow
 {
+    private async Task ConfigureBenchmarkViewport()
+    {
+        var widthOption = Array.IndexOf(arguments, "--preview-width");
+        var heightOption = Array.IndexOf(arguments, "--preview-height");
+        if (widthOption < 0 || heightOption < 0) return;
+        var width = int.Parse(arguments[widthOption + 1]);
+        var height = int.Parse(arguments[heightOption + 1]);
+        if (width is < 320 or > 7680 || height is < 240 or > 4320) throw new ArgumentOutOfRangeException(nameof(arguments), "Invalid benchmark preview size.");
+        // Request a physical-pixel surface, then report the actual platform layout.
+        // Window managers may constrain the request; it does not prove display timing.
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            await Task.Delay(50);
+            Width += width / RenderScaling - Surface.Bounds.Width;
+            Height += height / RenderScaling - Surface.Bounds.Height;
+        }
+        await Task.Delay(50);
+    }
     private partial void StartBenchmark()
     {
         var feedback = new List<double>(); var handlers = new List<double>(); var frames = new List<double>();
@@ -129,6 +147,7 @@ public partial class MainWindow
                     runtimeAssembly = typeof(object).Assembly.Location,
                     cpu = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"), processors = Environment.ProcessorCount,
                     source = activeFolder, export = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot, photos = rows.Count, metadataTree,
+                    sourceRevisionChangeTokenAvailable = current?.Photo.Revision.ChangeToken != null,
                     previewPhysical = new { width = Surface.Bounds.Width * RenderScaling, height = Surface.Bounds.Height * RenderScaling },
                     firstUsableMs = firstUsable, actions = completed, ignoredKeys, inputElapsedSeconds = inputElapsed, deliveredPerSecond = completed / inputElapsed,
                     feedback = Summary(feedback), handler = Summary(handlers), frameSubmission = Summary(frames),
@@ -142,7 +161,7 @@ public partial class MainWindow
                     thumbnailDiskWrites = Images.ThumbnailWrites,
                     exportIndexScans = new { full = comparer.FullIndexScans, association = comparer.AssociationIndexScans, associationRevisionReads = comparer.AssociationRevisionReads },
                     metadataWrites = metadata.SuccessfulWrites, maintenanceErrors = maintenanceErrors.ToArray(),
-                    limitation = "Synthetic diagnostics are not representative photographic evidence. Decoded-cache cold does not establish uncached SSD timing. No physical-display or Mac gate inferred."
+                    limitation = "Corpus composition must be documented separately. Decoded-cache cold does not establish uncached SSD timing. No physical-display or unexecuted platform gate inferred."
                 };
                 await Write(result);
                 var screenshot = Array.IndexOf(arguments, "--screenshot");

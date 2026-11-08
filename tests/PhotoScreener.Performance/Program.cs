@@ -3,6 +3,24 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using PhotoScreener.TestFixtures;
 
+if (args.Length > 0 && args[0] == "--inspect")
+{
+    if (args.Length != 2 || string.IsNullOrWhiteSpace(args[1])) throw new ArgumentException("Usage: PhotoScreener.Performance --inspect <photo-folder>");
+    // Read encoded headers only; never decode or write original photos.
+    var files = Directory.EnumerateFiles(Path.GetFullPath(args[1])).Where(path => Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png").OrderBy(path => path, StringComparer.Ordinal).ToArray();
+    var sampleCount = Math.Min(files.Length, 100);
+    var samples = new List<object>();
+    for (var i = 0; i < sampleCount; i++)
+    {
+        var path = files[(int)((long)i * files.Length / sampleCount)];
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var bytes = stream.Length;
+        using var codec = SKCodec.Create(stream);
+        samples.Add(codec == null ? new { readable = false, width = 0, height = 0, megapixels = 0d, bytes, format = Path.GetExtension(path) } : new { readable = true, width = codec.Info.Width, height = codec.Info.Height, megapixels = codec.Info.Width * (double)codec.Info.Height / 1_000_000, bytes, format = codec.EncodedFormat.ToString() });
+    }
+    Console.WriteLine(JsonSerializer.Serialize(new { files = files.Length, sampledHeaders = sampleCount, samples }, new JsonSerializerOptions { WriteIndented = true }));
+    return;
+}
 if (args.Length < 1) { Console.WriteLine("Usage: PhotoScreener.Performance <corpus-directory> [count=100] [width=4000] [height=3000] [--exif] [--folders N] [--export-samples N]"); return; }
 var directory = Path.GetFullPath(args[0]); Directory.CreateDirectory(directory);
 var count = args.Length > 1 ? int.Parse(args[1]) : 100;

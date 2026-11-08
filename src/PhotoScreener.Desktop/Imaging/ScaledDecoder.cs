@@ -8,7 +8,7 @@ public static class ScaledDecoder
 {
     // PNG decoding can need a native-size buffer. Serialize allocations above 64 MiB.
     private static readonly SemaphoreSlim LargeDecode = new(1);
-    public static Bitmap Decode(string path, int longestSide, CancellationToken token)
+    public static Bitmap Decode(string path, int longestSide, CancellationToken token, bool quickPreview = false)
     {
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         using var stream = new SKManagedStream(input);
@@ -16,7 +16,11 @@ public static class ScaledDecoder
         var original = codec.Info;
         if ((long)original.Width * original.Height > 60_000_000) throw new InvalidDataException("Image exceeds the 60 MP decode limit.");
         var ratio = Math.Min(1f, (float)longestSide / Math.Max(original.Width, original.Height));
-        var size = codec.GetScaledDimensions(ratio);
+        // The first JPEG view uses the codec's lowest native DCT resolution.
+        // This avoids decoding a larger fraction just to downscale a brief quick
+        // preview. Full refinement still decodes for its requested output size.
+        var decodeRatio = quickPreview && codec.EncodedFormat == SKEncodedImageFormat.Jpeg ? Math.Min(ratio, .125f) : ratio;
+        var size = codec.GetScaledDimensions(decodeRatio);
         var large = (long)size.Width * size.Height * 4 > 64 * 1024 * 1024;
         if (large) LargeDecode.Wait(token);
         try

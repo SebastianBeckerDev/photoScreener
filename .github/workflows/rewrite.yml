@@ -26,3 +26,4 @@ jobs:
       - run: dotnet restore PhotoScreener.Rewrite.sln --locked-mode
       - run: dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
       - run: bash scripts/package-macos.sh
+      - run: bash scripts/test-macos-package.sh

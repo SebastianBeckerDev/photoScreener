@@ -17,7 +17,9 @@ Latest Release tests: 50 core/infrastructure and 25 Avalonia headless cases pass
 
 Single-photo mutation checks now index only that original's bare/legacy-suffixed candidates, including before deletion and during failure recovery; folder open/Refresh still builds the complete index. A real filesystem test locks an unassociated file with the same stem prefix and completes pick/unpick without opening it. Full/association scan and candidate-revision counters are included in benchmark reports. Verified shared associations are visible in photo status/tooltips and retain their known relationship across an empty-export reconciliation when a native source change token is available. The UI regression covers two identical originals, unpick/repick, then an external edit in the inactive folder: the worker's fresh source census cancels stale optimistic propagation and reopening rebuilds that folder's rows.
 
-The first public GitHub Windows job failed only during fixture disposal after a killed process, with a transient sharing violation on the source fixture. Cleanup now retries only Windows sharing/lock violations for at most three seconds, after checking the temporary root boundary; recovery and source-safety assertions are not retried. The corrected full command passes locally. CI uses the standard GitHub `macos-15` ARM64 runner ([available runner images](https://github.com/actions/runner-images#available-images)); native Mac results are pending its first run.
+The first public GitHub Windows job failed only during fixture disposal after a killed process, with a transient sharing violation on the source fixture. Cleanup now retries only Windows sharing/lock violations for at most three seconds, after checking the temporary root boundary. A subsequent job encountered a transient writer-lock hold after confirmed child exit; the recovery fixture now waits up to three seconds for ownership before running cleanup and assertions once. All four kill/recovery cases pass locally. Recovery/source-safety assertions are never retried. Windows run [42419080908](https://github.com/SebastianBeckerDev/photoScreener/actions/runs/42419080908) passed the full 75 tests and self-contained publish.
+
+CI uses the standard GitHub `macos-15` ARM64 runner ([available runner images](https://github.com/actions/runner-images#available-images)). Its first native execution exposed the Darwin ARM64 variadic `openat` ABI mismatch: creation permissions were being passed in a register instead of the required stack location. Commit `b91dcb1` corrects that call. The Mac job in [42419921630](https://github.com/SebastianBeckerDev/photoScreener/actions/runs/42419921630) passes all 50 infrastructure and 25 desktop tests, ARM64 verification, self-contained publish, plist validation and unsigned bundle assembly. Signing/notarization and native reference performance remain unverified. A short actual-bundle window/runtime smoke is now configured separately; it is pending execution.
 
 The 2026-11-07 binding safety follow-up checks actual directory identity before using warm folder rows or mutating a captured target, and again after first creating a missing export root. Different path keys for the same physical directory are rejected with a consistent-spelling message. Windows paths containing trailing dots/spaces and case-sensitive directories that the session's case-insensitive keys cannot represent fail explicitly. Native tests use an extended-path alias, a trailing-dot alias, and an actual NTFS case-sensitive directory with two distinct `a.JPG`/`A.JPG` originals and `one`/`One` subdirectories. Rejected requests preserve the sources and existing export copy; library discovery reports the folder collision. Ordinary Windows case variants remain valid. The Mac case-sensitive/insensitive branch is runnable but not executed here. The Debug app and both platform payloads are rebuilt with these changes and the subsequent folder-list fix.
 
@@ -28,6 +30,27 @@ Tests perform actual filesystem mutations and child-process interruption, rather
 The UI offers pending/error states, retry/cancel, a work panel and tooltips on every button. Optional JSON never establishes picks. Its saved filter/cursor applies after association checks and only if navigation has not already begun. Creating a default export does not reset the focused photo.
 
 ## Windows measurements
+
+First real photographic run: `artifacts/performance/private-real-camera-usb.json`, 2026-11-07. The user-provided archive contains 116,716 JPEG and 94 PNG filenames across 776 directories (about 557.7 GiB). The selected camera folder contains 3,435 JPEG filenames; 99 of 100 evenly spaced header samples are readable 20.668 MP images, with one unreadable 4 KiB file. Sampled files average 8.25 MB. This is a real photographic workload, but it does not supply the required single 10,000-image folder. The source is a Samsung T7 over USB with exFAT; exports/cache are in a new user-temporary directory outside the repository. Private folder/file names and raw reports remain ignored local artifacts.
+
+| Real-camera USB run | Result |
+| --- | --- |
+| Actual physical-pixel preview surface | 1919 × 1080; requested 1920 × 1080 |
+| Inputs / ignored keys | 1,200 in 60.005 seconds / zero |
+| Input feedback p95 / p99 | 1.002 / 2.184 ms |
+| Drawing submission p95 / p99 | 8.075 / 12.013 ms |
+| First usable preview | 191.076 ms; one opening sample |
+| Stable decoded-cache cold low / full p95 | 544.375 / 1558.913 ms; 100 samples |
+| Peak sampled working set / decoded cache | 356.980 / 63.959 MiB |
+| Image queue / pending mutations / realized tiles maxima | 21 / 2 / 15 |
+| Completed mutation results / copied bytes / hash-read bytes | 240 / 903,936,999 / 2,922,191,437 |
+| Full / association export scans; candidate revision reads | 3 / 360; 120 |
+| Review JSON writes / thumbnail disk writes | 712 / 0 |
+| Export or maintenance errors | None |
+
+Feedback and RAM meet their numerical limits in this run. Preview latency does not meet the low/full limits; the source is removable exFAT, and decoded-cache cold does not mean uncached physical storage. Without a reliable native change token, existing cache hints are deliberately not trusted. A bounded 100-image copy (779.2 MiB) on the internal NTFS SSD is prepared to separate storage/cache behavior from decoding. Its comparison results are pending. The first USB attempt lost window activation during input and correctly rejected 587 ignored keys; `private-real-camera-usb-invalid-focus.json` is invalid evidence.
+
+The benchmark now supports `-PrivateSource`, keeping photo copies/cache outside the repository, and requests a configurable physical-pixel preview before timing. Reports retain the actual platform-constrained size and source change-token availability. The header-inspection tool reads at most 100 encoded headers without decoding or changing originals. No private photos are committed or bundled.
 
 Earlier full self-contained package run, including photo information and centered thumbnails: `artifacts/performance/windows-package-information.json`, 2026-11-07. The app used its bundled .NET 10.0.11 with installed-runtime lookup disabled. The synthetic mixed folder contained 10,000 files; the information sidebar was visible, giving a 1209 × 647 physical preview area. The current package smoke above and current tree-scale run below also include the subsequent binding/list fixes.
 
