@@ -2,17 +2,32 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using SkiaSharp;
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 
 namespace PhotoScreener.Desktop.Imaging;
 public static class ScaledDecoder
 {
     // PNG decoding can need a native-size buffer. Serialize allocations above 64 MiB.
     private static readonly SemaphoreSlim LargeDecode = new(1);
+    private const int MaximumEncodedBytes = 40 * 1024 * 1024;
+    private static readonly SemaphoreSlim EncodedSlots = new(2);
+    private static readonly ConcurrentBag<SKData> EncodedBuffers = [];
     public static Bitmap Decode(string path, int longestSide, CancellationToken token, bool quickPreview = false)
     {
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         using var stream = new SKManagedStream(input);
-        using var codec = SKCodec.Create(stream) ?? throw new InvalidDataException("Unsupported or damaged JPEG/PNG.");
+        using var headerCodec = SKCodec.Create(stream) ?? throw new InvalidDataException("Unsupported or damaged JPEG/PNG.");
+        // JPEG entropy decoding performs many small stream reads. A bounded
+        // native encoded buffer avoids managed callbacks throughout that work.
+        // Two reusable buffers reserve at most 80 MiB, avoiding large-allocation
+        // fragmentation during sustained navigation. Native codecs return each
+        // buffer only when their borrowed data reference has been released.
+        // PNG and larger files keep the existing streamed allocation policy.
+        using var encoded = headerCodec.EncodedFormat == SKEncodedImageFormat.Jpeg && input.Length <= MaximumEncodedBytes ? ReadEncoded(input, token) : null;
+        using var memoryCodec = encoded != null ? SKCodec.Create(encoded) ?? throw new InvalidDataException("JPEG memory decode could not be initialized.") : null;
+        var codec = memoryCodec ?? headerCodec;
         var original = codec.Info;
         if ((long)original.Width * original.Height > 60_000_000) throw new InvalidDataException("Image exceeds the 60 MP decode limit.");
         var ratio = Math.Min(1f, (float)longestSide / Math.Max(original.Width, original.Height));
@@ -51,6 +66,36 @@ public static class ScaledDecoder
         }
         finally { if (large) LargeDecode.Release(); }
     }
+    private static SKData ReadEncoded(FileStream input, CancellationToken token)
+    {
+        EncodedSlots.Wait(token);
+        SKData? buffer = null; byte[]? transfer = null; var borrowed = false;
+        try
+        {
+            buffer = EncodedBuffers.TryTake(out var reusable) ? reusable : SKData.Create(MaximumEncodedBytes);
+            if (buffer == null) throw new IOException("JPEG encoded buffer could not be allocated.");
+            transfer = ArrayPool<byte>.Shared.Rent(65536);
+            var observedLength = input.Length;
+            if (observedLength <= 0 || observedLength > MaximumEncodedBytes) throw new IOException("JPEG size changed before its encoded buffer was filled.");
+            input.Position = 0; var length = (int)observedLength; var offset = 0;
+            while (offset < length)
+            {
+                token.ThrowIfCancellationRequested();
+                var read = input.Read(transfer, 0, Math.Min(transfer.Length, length - offset));
+                if (read == 0) throw new IOException("JPEG ended before its encoded buffer was filled.");
+                Marshal.Copy(transfer, 0, IntPtr.Add(buffer.Data, offset), read); offset += read;
+            }
+            var data = SKData.Create(buffer.Data, length, ReleaseEncoded, buffer) ?? throw new IOException("JPEG encoded buffer could not be borrowed.");
+            borrowed = true; return data;
+        }
+        finally
+        {
+            if (transfer != null) ArrayPool<byte>.Shared.Return(transfer);
+            if (!borrowed) { if (buffer != null) EncodedBuffers.Add(buffer); EncodedSlots.Release(); }
+        }
+    }
+    private static void ReleaseEncoded(IntPtr address, object context)
+    { EncodedBuffers.Add((SKData)context); EncodedSlots.Release(); }
     public static SKMatrix Orientation(SKEncodedOrigin origin, int w, int h) => origin switch
     {
         SKEncodedOrigin.TopRight => Matrix(-1, 0, w, 0, 1, 0),

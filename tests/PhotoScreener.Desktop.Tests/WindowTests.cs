@@ -275,6 +275,38 @@ public sealed class WindowTests
         using var data = bitmap.Encode(Path.GetExtension(name) == ".png" ? SKEncodedImageFormat.Png : SKEncodedImageFormat.Jpeg, 95);
         File.WriteAllBytes(Path.Combine(folder, name), data.ToArray());
     }
+    [AvaloniaFact]
+    public async Task ConcurrentJpegBufferReuseKeepsPreviouslyDecodedPhotosIndependent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-jpeg-pool-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        var outputs = new List<Bitmap>();
+        try
+        {
+            var colors = new[] { SKColors.Red, SKColors.Blue };
+            var paths = new[] { Path.Combine(root, "red.JPG"), Path.Combine(root, "blue.JPG") };
+            for (var i = 0; i < 2; i++)
+            {
+                using var original = new SKBitmap(2000, 1500); original.Erase(colors[i]);
+                using var encoded = original.Encode(SKEncodedImageFormat.Jpeg, 95); File.WriteAllBytes(paths[i], encoded.ToArray());
+            }
+            for (var round = 0; round < 2; round++)
+            {
+                var quick = round == 1;
+                var pair = await Task.WhenAll(paths.Select(path => Task.Run(() => ScaledDecoder.Decode(path, 800, default, quickPreview: quick)))).WaitAsync(TimeSpan.FromSeconds(10));
+                outputs.AddRange(pair);
+            }
+            // Both original decoded outputs remain alive while the encoded slots
+            // are reused, so aliasing their pooled bytes would corrupt pixels.
+            for (var i = 0; i < outputs.Count; i++)
+            {
+                var decoded = outputs[i]; using var pixels = ((WriteableBitmap)decoded).Lock();
+                var value = (uint)Marshal.ReadInt32(pixels.Address, decoded.PixelSize.Height / 2 * pixels.RowBytes + decoded.PixelSize.Width / 2 * 4);
+                Assert.InRange(Math.Abs((int)((value >> 16) & 255) - colors[i % 2].Red), 0, 12);
+                Assert.InRange(Math.Abs((int)(value & 255) - colors[i % 2].Blue), 0, 12);
+            }
+        }
+        finally { foreach (var bitmap in outputs) bitmap.Dispose(); Directory.Delete(root, true); }
+    }
     [AvaloniaTheory]
     [InlineData(1, false)] [InlineData(2, false)] [InlineData(3, false)] [InlineData(4, false)]
     [InlineData(5, true)] [InlineData(6, true)] [InlineData(7, true)] [InlineData(8, true)]

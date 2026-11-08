@@ -40,6 +40,22 @@ public partial class MainWindow
         var errors = new List<string>(); var completed = 0; var totalOperations = 0;
         var ignoredKeys = 0; var ignoredContexts = new List<object>();
         var maintenanceErrors = new List<string>();
+        var imageTimingGate = new object();
+        var imageTimings = new Dictionary<string, List<double>>();
+        Images.WorkMeasured += timing =>
+        {
+            var kind = timing.Full ? "full" : timing.Side == 800 ? "quick" : "thumbnail";
+            lock (imageTimingGate)
+            {
+                Add(kind + (timing.CacheHit ? "-cache-total" : "-original-total"), timing.TotalMs);
+                if (!timing.CacheHit) { Add(kind + "-revision", timing.RevisionMs); Add(kind + "-decode", timing.DecodeMs); }
+            }
+            void Add(string key, double elapsed)
+            {
+                if (!imageTimings.TryGetValue(key, out var values)) imageTimings[key] = values = [];
+                if (values.Count < 10_000) values.Add(elapsed);
+            }
+        };
         mutations!.MaintenanceError += error => { lock (maintenanceErrors) maintenanceErrors.Add(error.ToString()); };
         var sections = new Dictionary<string, List<double>>();
         ActionSection += (section, elapsed) => { if (!sections.TryGetValue(section, out var values)) sections[section] = values = []; values.Add(elapsed); };
@@ -144,6 +160,7 @@ public partial class MainWindow
                     kind = "real-window fixed-rate routed-key injection; drawing submission, not physical display",
                     timestampUtc = DateTime.UtcNow, os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
                     framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                    processArchitecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), is64BitProcess = Environment.Is64BitProcess,
                     runtimeAssembly = typeof(object).Assembly.Location,
                     cpu = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"), processors = Environment.ProcessorCount,
                     source = activeFolder, export = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot, photos = rows.Count, metadataTree,
@@ -152,6 +169,7 @@ public partial class MainWindow
                     firstUsableMs = firstUsable, actions = completed, ignoredKeys, inputElapsedSeconds = inputElapsed, deliveredPerSecond = completed / inputElapsed,
                     feedback = Summary(feedback), handler = Summary(handlers), frameSubmission = Summary(frames),
                     sections = sections.ToDictionary(e => e.Key, e => Summary(e.Value)),
+                    imageWorkerSections = SnapshotImageTimings(),
                     navigatingLowPublication = Summary(lows), navigatingFullPublication = Summary(fulls),
                     stableDecodedCacheColdLow = Summary(stableLow), stableDecodedCacheColdFull = Summary(stableFull),
                     deliveredCadenceMs = Summary(deliveries.Zip(deliveries.Skip(1), (a, b) => b - a).ToList()),
@@ -192,6 +210,7 @@ public partial class MainWindow
         }
         Task Write(object result) => Task.Run(() => { Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!); File.WriteAllText(output, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })); });
         int OptionInt(string key, int fallback) { var index = Array.IndexOf(arguments, key); return index >= 0 && index + 1 < arguments.Length ? int.Parse(arguments[index + 1]) : fallback; }
+        object SnapshotImageTimings() { lock (imageTimingGate) return imageTimings.ToDictionary(entry => entry.Key, entry => Summary(entry.Value.ToList())); }
         static object Summary(List<double> values)
         {
             values.Sort(); double? Percentile(double p) => values.Count == 0 ? null : values[Math.Min(values.Count - 1, (int)Math.Ceiling(values.Count * p) - 1)];

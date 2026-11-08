@@ -21,6 +21,7 @@ internal sealed class SharedImage(Bitmap bitmap)
     public void Release() { if (Interlocked.Decrement(ref references) == 0) Bitmap.Dispose(); }
 }
 public sealed record ImageRequest(Photo Photo, int Side, long Generation, bool Full, Action<ImageLease?, string?> Complete, object? Owner = null, bool Relaxed = false, bool IncludeHistogram = false);
+public sealed record ImageWorkTiming(Photo Photo, int Side, bool Full, double RevisionMs, double DecodeMs, double TotalMs, bool CacheHit);
 
 // Two fixed workers: latest focused low preview, and fair full/visible/idle work.
 public sealed class PreviewScheduler : IAsyncDisposable
@@ -46,6 +47,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     public int ThumbnailWrites => diskCache.SuccessfulWrites;
     public bool ForegroundPending { get { lock (gate) return low != null || full != null || visible.Count > 0; } }
     public event Action<Photo, bool, double>? Decoded;
+    public event Action<ImageWorkTiming>? WorkMeasured;
     public event Action<Photo, long, IReadOnlyList<int>?>? HistogramReady;
     public PreviewScheduler(string? cacheDirectory = null) { diskCache = new(cacheDirectory); workers = [Task.Run(UrgentLoop), Task.Run(SecondaryLoop)]; }
     public void SetContext(long value, IReadOnlyList<Photo> photos)
@@ -123,22 +125,27 @@ public sealed class PreviewScheduler : IAsyncDisposable
         ImageLease? lease = null;
         ImageLease? cacheWriteLease = null;
         ImageLease? histogramLease = null;
+        var revisionMs = 0d; var decodeMs = 0d; var cacheHit = false;
         try
         {
             using var backgroundPriority = request.Relaxed ? PlatformFileSystem.BackgroundWork() : null;
             if (PathGuard.Revision(request.Photo.Path) != request.Photo.Revision) throw new IOException("Source changed; refresh the folder.");
+            revisionMs = watch.Elapsed.TotalMilliseconds;
             lock (gate)
             {
                 if (request.Generation != generation) return;
                 if (request.Photo.Revision.ChangeToken != null && cache.TryGetValue(Key(request), out var hit))
-                { recency.Remove(hit.Node); recency.AddFirst(hit.Node); lease = new(hit.Image); }
+                { recency.Remove(hit.Node); recency.AddFirst(hit.Node); lease = new(hit.Image); cacheHit = true; }
             }
             if (lease == null)
             {
                 var keyForDisk = Key(request);
                 var bitmap = request.Side == 160 && request.Photo.Revision.ChangeToken != null ? diskCache.Read(keyForDisk) : null;
                 var diskHit = bitmap != null;
+                cacheHit = diskHit;
+                var decodeStarted = watch.Elapsed.TotalMilliseconds;
                 bitmap ??= ScaledDecoder.Decode(request.Photo.Path, request.Side, stop.Token, quickPreview: !request.Full);
+                decodeMs = watch.Elapsed.TotalMilliseconds - decodeStarted;
                 if (PathGuard.Revision(request.Photo.Path) != request.Photo.Revision) { bitmap.Dispose(); throw new IOException("Source changed during preview decoding."); }
                 var image = new SharedImage(bitmap);
                 lock (gate)
@@ -155,6 +162,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
             }
             if (request.IncludeHistogram) histogramLease = lease!.Fork();
             Decoded?.Invoke(request.Photo, request.Full, watch.Elapsed.TotalMilliseconds);
+            WorkMeasured?.Invoke(new(request.Photo, request.Side, request.Full, revisionMs, decodeMs, watch.Elapsed.TotalMilliseconds, cacheHit));
             request.Complete(lease, null); lease = null;
             if (histogramLease != null)
             {
