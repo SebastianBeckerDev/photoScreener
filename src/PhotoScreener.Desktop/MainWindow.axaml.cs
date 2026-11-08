@@ -295,6 +295,7 @@ public partial class MainWindow : Window
     }
     private void FocusPhoto(PhotoRow row)
     {
+        WelcomeBrand.IsVisible = false;
         if (current?.Photo != row.Photo) { Preview.ResetView(); Text("ZoomStatus", "Fit"); LoadInformation(row); }
         current = row; focusGeneration++;
         Text("CurrentName", row.Name); Text("CurrentStatus", row.Status);
@@ -353,6 +354,7 @@ public partial class MainWindow : Window
     private int PreviewSide() => Math.Clamp((int)(Math.Max(Surface.Bounds.Width, Surface.Bounds.Height) * RenderScaling * Preview.Zoom), 1024, 3840);
     private void ClearFocus()
     {
+        WelcomeBrand.IsVisible = true;
         ClearInformation();
         Preview.ResetView(); Text("ZoomStatus", "Fit");
         current = null; focusGeneration++; Preview.Source = null; previewLease?.Dispose(); previewLease = null;

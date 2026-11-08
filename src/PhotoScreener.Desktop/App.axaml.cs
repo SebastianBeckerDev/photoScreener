@@ -9,7 +9,8 @@ public sealed class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime lifetime)
-            lifetime.MainWindow = new MainWindow(Program.Arguments, new PhotoScreener.Infrastructure.SessionSettingsStore());
+            lifetime.MainWindow = new SplashWindow(window => lifetime.MainWindow = window,
+                () => new MainWindow(Program.Arguments, new PhotoScreener.Infrastructure.SessionSettingsStore()));
         base.OnFrameworkInitializationCompleted();
     }
 }

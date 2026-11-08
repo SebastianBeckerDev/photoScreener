@@ -12,7 +12,7 @@ import zipfile
 
 root = Path(__file__).resolve().parent.parent
 payload = root / "artifacts/publish/osx-arm64"
-app = root / "artifacts/Photo Screener.app"
+app = root / "artifacts/LumaPick.app"
 native = []
 
 
@@ -71,7 +71,8 @@ contents = app / "Contents"
 (contents / "Resources").mkdir(exist_ok=True)
 shutil.copytree(payload, contents / "MacOS", dirs_exist_ok=True)
 shutil.copyfile(root / "packaging/macos/Info.plist", contents / "Info.plist")
-archive = root / "artifacts/PhotoScreener-osx-arm64-unsigned.zip"
+shutil.copyfile(root / "src/PhotoScreener.Desktop/Assets/lumapick.icns", contents / "Resources/lumapick.icns")
+archive = root / "artifacts/LumaPick-osx-arm64-unsigned.zip"
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
     for path in sorted(app.rglob("*")):
         if not path.is_file():

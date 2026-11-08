@@ -1,6 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:PhotoScreener.Desktop" x:Class="PhotoScreener.Desktop.MainWindow"
-        Title="Photo Screener · Rewrite" Width="1440" Height="900" MinWidth="740" MinHeight="480" Background="#111318">
+        Title="LumaPick" Icon="avares://PhotoScreener.Desktop/Assets/lumapick.ico" Width="1440" Height="900" MinWidth="740" MinHeight="480" Background="#111318">
   <Grid RowDefinitions="Auto,*,Auto,Auto">
     <Border Background="#1C2028" Padding="12,8">
       <DockPanel LastChildFill="True">
@@ -31,7 +31,13 @@
       <Grid>
         <local:ZoomImage Name="Preview" Margin="8" />
         <Border Margin="16" Padding="7,4" CornerRadius="4" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#CC111318" IsHitTestVisible="False"><TextBlock Name="ZoomStatus" Text="Fit" Foreground="#DCE3EC" /></Border>
-        <TextBlock Name="PreviewMessage" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#A6B0C0" FontSize="18" Text="Open a folder to begin reviewing" />
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18" IsHitTestVisible="False">
+          <StackPanel Name="WelcomeBrand" HorizontalAlignment="Center" Spacing="10">
+            <Image Source="avares://PhotoScreener.Desktop/Assets/lumapick.png" Width="104" Height="104" />
+            <TextBlock Text="LumaPick" FontSize="30" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#F4FFF9" />
+          </StackPanel>
+          <TextBlock Name="PreviewMessage" HorizontalAlignment="Center" Foreground="#A6B0C0" FontSize="18" Text="Open a folder to begin reviewing" />
+        </StackPanel>
         <Border Name="WorkPanel" IsVisible="False" Background="#EE1C2028" Width="340" HorizontalAlignment="Right" Padding="12">
           <DockPanel><TextBlock DockPanel.Dock="Top" Text="Pending and failed changes" Margin="0,0,0,8" FontWeight="SemiBold" /><ListBox Name="WorkList"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="11" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel>
         </Border>

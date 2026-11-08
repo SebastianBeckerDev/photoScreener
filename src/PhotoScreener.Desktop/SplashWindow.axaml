@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PhotoScreener.Desktop.SplashWindow" Title="LumaPick"
+        Icon="avares://PhotoScreener.Desktop/Assets/lumapick.ico"
+        Width="520" Height="350" CanResize="False" SystemDecorations="None"
+        ShowInTaskbar="False" WindowStartupLocation="CenterScreen" Background="#101721">
+  <Border BorderBrush="#263A42" BorderThickness="1" Padding="32">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+      <Image Source="avares://PhotoScreener.Desktop/Assets/lumapick.png" Width="104" Height="104" />
+      <TextBlock Text="LumaPick" FontSize="38" FontWeight="SemiBold" Foreground="#F4FFF9" HorizontalAlignment="Center" />
+      <TextBlock Text="Find your keepers." FontSize="15" Foreground="#A5BBB8" HorizontalAlignment="Center" />
+      <ProgressBar Width="150" Height="3" Margin="0,14,0,0" IsIndeterminate="True" Foreground="#50E5C3" />
+      <TextBlock Text="Starting…" FontSize="11" Foreground="#819B99" HorizontalAlignment="Center" />
+    </StackPanel>
+  </Border>
+</Window>

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>WinExe</OutputType><AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault></PropertyGroup>
+  <PropertyGroup><OutputType>WinExe</OutputType><AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault><ApplicationIcon>Assets/lumapick.ico</ApplicationIcon><Product>LumaPick</Product><AssemblyTitle>LumaPick</AssemblyTitle><Description>Keyboard-first photo selection</Description></PropertyGroup>
   <ItemGroup>
+    <AvaloniaResource Include="Assets/lumapick.png" />
+    <AvaloniaResource Include="Assets/lumapick.ico" />
     <ProjectReference Include="../PhotoScreener.Infrastructure/PhotoScreener.Infrastructure.csproj" />
     <PackageReference Include="Avalonia" /><PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" /><PackageReference Include="CommunityToolkit.Mvvm" />

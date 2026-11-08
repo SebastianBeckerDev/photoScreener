@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">LumaPick</title>
+<desc id="desc">A mint camera aperture around a white selection check on a dark rounded square.</desc>
+<rect width="512" height="512" rx="104" fill="#101721"/>
+<polygon points="256.000,82.000 406.688,169.000 314.024,289.500 314.024,222.500" fill="#77EFD3"/>
+<polygon points="406.688,169.000 406.688,343.000 256.000,323.000 314.024,289.500" fill="#50E5C3"/>
+<polygon points="406.688,343.000 256.000,430.000 197.976,289.500 256.000,323.000" fill="#3FC6AC"/>
+<polygon points="256.000,430.000 105.312,343.000 197.976,222.500 197.976,289.500" fill="#268F88"/>
+<polygon points="105.312,343.000 105.312,169.000 256.000,189.000 197.976,222.500" fill="#2DB09D"/>
+<polygon points="105.312,169.000 256.000,82.000 314.024,222.500 256.000,189.000" fill="#42CBB3"/>
+<path d="M218 253 L248 282 L302 221" fill="none" stroke="#F4FFF9" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,4 +1,8 @@
-# Photo Screener rewrite
+# LumaPick
+
+![LumaPick aperture and selection mark](src/PhotoScreener.Desktop/Assets/lumapick.svg)
+
+**Find your keepers.** LumaPick is the PhotoScreener rewrite: keyboard-first photo review with verified export copies. Its logo appears in the startup splash, empty review view, window/taskbar icon and platform packages. The splash hands directly to the review window without a minimum display delay. Existing settings/export metadata and the repository's technical project names retain compatibility.
 
 The .NET 10 / Avalonia app lives in `src/`. The old WPF project, solution and launcher were removed at the user's request. The isolated legacy-format fixture helper remains in the tests.
 
@@ -40,9 +44,10 @@ pwsh -File scripts/Benchmark-Rewrite.ps1 -SourceFolder artifacts/corpus-10000 -M
 
 The report includes scanned file/folder/pick counts and memory sampled during both the scan and subsequent review. This small-image tree tests metadata scaling; the photographic reference corpus remains a separate acceptance workload. Benchmark builds use `artifacts/benchmark-build` so they can run alongside the development app.
 
-Windows self-contained output: `artifacts/publish/win-x64/PhotoScreener.Desktop.exe`; zip: `artifacts/PhotoScreener-win-x64.zip`.
+Windows self-contained output: `artifacts/publish/win-x64/PhotoScreener.Desktop.exe`; zip: `artifacts/LumaPick-win-x64.zip` (EXE product name/icon: LumaPick).
 For the development launcher, run `buildAndRunRewrite.bat "D:\Photos\Trip"`.
 On an Apple Silicon Mac, run `bash scripts/package-macos.sh`; the initial deployment profile is macOS 14+. Set `SIGNING_IDENTITY` to sign; pass `--notarize` with an explicitly configured `NOTARY_PROFILE` to submit to Apple. No credentials are stored in this repository.
+The bundle is `artifacts/LumaPick.app`, with its Dock/Finder icon; the ZIP is `artifacts/LumaPick-osx-arm64.zip`. See [macOS distribution](docs/macos-distribution.md) for certificate/keychain setup and the separate Mac App Store requirements.
 Run `bash scripts/test-macos-package.sh` for a short functional check of the assembled bundle with installed-runtime lookup disabled. It creates synthetic fixtures under ignored `artifacts/`, starts the actual app window, checks all injected keys and export errors, and verifies the bundled runtime. It does not establish representative photo performance or signed installation acceptance.
 From Windows, `pwsh -File scripts/Publish-Rewrite.ps1 -Runtime osx-arm64` followed by `python scripts/Assemble-MacBundle.py` produces an unsigned `.app` zip with native architecture/minimum-version inspection. It still requires execution and signing checks on a Mac.
 

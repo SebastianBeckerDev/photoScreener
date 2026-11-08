@@ -4,11 +4,12 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 runtime="${RUNTIME:-osx-arm64}"
 if [[ "$runtime" != "osx-arm64" ]]; then echo 'Only the Apple Silicon profile is defined.' >&2; exit 1; fi
 publish="$root/artifacts/publish/$runtime"
-app="$root/artifacts/Photo Screener.app"
+app="$root/artifacts/LumaPick.app"
 dotnet publish "$root/src/PhotoScreener.Desktop/PhotoScreener.Desktop.csproj" -c Release -r "$runtime" --self-contained true -p:RestoreLockedMode=true --disable-build-servers -o "$publish"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 rsync -a "$publish/" "$app/Contents/MacOS/"
 cp "$root/packaging/macos/Info.plist" "$app/Contents/Info.plist"
+cp "$root/src/PhotoScreener.Desktop/Assets/lumapick.icns" "$app/Contents/Resources/lumapick.icns"
 chmod +x "$app/Contents/MacOS/PhotoScreener.Desktop"
 plutil -lint "$app/Contents/Info.plist"
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
@@ -23,13 +24,13 @@ if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
   codesign --force --timestamp --options runtime --entitlements "$root/packaging/macos/entitlements.plist" --sign "$SIGNING_IDENTITY" "$app"
   codesign --verify --deep --strict --verbose=2 "$app"
 fi
-ditto -c -k --keepParent "$app" "$root/artifacts/PhotoScreener-osx-arm64.zip"
+ditto -c -k --keepParent "$app" "$root/artifacts/LumaPick-osx-arm64.zip"
 if [[ "${1:-}" == '--notarize' ]]; then
   : "${NOTARY_PROFILE:?Set a configured notarytool keychain profile.}"
   : "${SIGNING_IDENTITY:?Signing is required before notarization.}"
-  xcrun notarytool submit "$root/artifacts/PhotoScreener-osx-arm64.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$root/artifacts/LumaPick-osx-arm64.zip" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$app"
   spctl --assess --type execute --verbose=2 "$app"
-  ditto -c -k --keepParent "$app" "$root/artifacts/PhotoScreener-osx-arm64.zip"
+  ditto -c -k --keepParent "$app" "$root/artifacts/LumaPick-osx-arm64.zip"
 fi
 echo "$app"

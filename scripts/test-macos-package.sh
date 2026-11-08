@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="$root/artifacts/Photo Screener.app/Contents/MacOS"
+app="$root/artifacts/LumaPick.app/Contents/MacOS"
+test -f "$root/artifacts/LumaPick.app/Contents/Resources/lumapick.icns"
 test "$(uname -m)" = arm64
 for component in PhotoScreener.Desktop libcoreclr.dylib libhostfxr.dylib System.Private.CoreLib.dll libSkiaSharp.dylib; do
   test -f "$app/$component" || { echo "Missing bundle component: $component" >&2; exit 1; }
