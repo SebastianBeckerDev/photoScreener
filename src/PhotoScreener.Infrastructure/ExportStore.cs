@@ -13,6 +13,7 @@ public sealed class ExportWriter : IDisposable
     private readonly IDisposable pinned;
     private readonly FileStream ownership;
     private readonly IDisposable exportAnchor;
+    private int disposed;
     public ExportBinding Binding { get; }
     public ExportWriter(ExportBinding binding, IEnumerable<string> protectedFolders, IReadOnlyList<string>? rememberedSourceIdentities = null, IEnumerable<ExportBinding>? knownBindings = null)
     {
@@ -37,7 +38,12 @@ public sealed class ExportWriter : IDisposable
         }
         catch { exportAnchor.Dispose(); throw; }
     }
-    public void Dispose() { try { ownership.Dispose(); } finally { try { pinned.Dispose(); } finally { exportAnchor.Dispose(); } } }
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        try { PlatformFileSystem.ReleaseOwnership(ownership); }
+        finally { try { ownership.Dispose(); } finally { try { pinned.Dispose(); } finally { exportAnchor.Dispose(); } } }
+    }
 }
 public sealed class ExportStore(FolderComparer comparer) : IExportStore
 {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using PhotoScreener.Core;
 using PhotoScreener.Infrastructure;
 using Xunit;
@@ -6,6 +7,54 @@ using Xunit;
 namespace PhotoScreener.Tests;
 public sealed class InterruptionTests
 {
+    [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)] private static extern int GetDescriptorFlags(int descriptor, int command);
+    [Fact]
+    public async Task UnrelatedChildCannotRetainAReleasedExportOwnershipLock()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-kill-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "parent-source"); var childSource = Path.Combine(root, "child-source");
+        Directory.CreateDirectory(source); Directory.CreateDirectory(childSource);
+        File.WriteAllText(Path.Combine(source, "a.JPG"), "abc"); File.WriteAllText(Path.Combine(childSource, "a.JPG"), "abc");
+        var binding = new ExportBinding(source, Path.Combine(root, "parent-export")); var childExport = Path.Combine(root, "child-export");
+        ExportWriter? owner = null; Process? child = null;
+        try
+        {
+            owner = new ExportWriter(binding, [source, childSource]);
+            if (OperatingSystem.IsMacOS())
+            {
+                using var input = PlatformFileSystem.OpenOwned(Path.Combine(source, "a.JPG"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                var flags = GetDescriptorFlags(input.SafeFileHandle.DangerousGetHandle().ToInt32(), 1); // F_GETFD has no variadic third argument.
+                Assert.True(flags >= 0); Assert.Equal(1, flags & 1); // FD_CLOEXEC
+            }
+            var repository = new DirectoryInfo(AppContext.BaseDirectory);
+            while (repository != null && !File.Exists(Path.Combine(repository.FullName, "PhotoScreener.Rewrite.sln"))) repository = repository.Parent;
+            Assert.NotNull(repository);
+#if DEBUG
+            const string configuration = "Debug";
+#else
+            const string configuration = "Release";
+#endif
+            var harness = Path.Combine(repository!.FullName, "tools", "PhotoScreener.FaultHarness", "bin", configuration, "net10.0", "PhotoScreener.FaultHarness.dll");
+            var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+            start.ArgumentList.Add(harness); start.ArgumentList.Add(childSource); start.ArgumentList.Add(childExport); start.ArgumentList.Add("staging");
+            child = Process.Start(start)!;
+            var reached = Path.Combine(childExport, ".photoscreener", "fault-reached.txt"); var wait = Stopwatch.StartNew();
+            while (!File.Exists(reached) && !child.HasExited && wait.Elapsed < TimeSpan.FromSeconds(15)) await Task.Delay(20);
+            Assert.True(File.Exists(reached), child.HasExited ? await child.StandardError.ReadToEndAsync() : "Unrelated child did not reach staging.");
+            owner.Dispose(); owner.Dispose(); owner = null;
+            using (var replacement = new ExportWriter(binding, [source, childSource])) Assert.False(child.HasExited);
+            var metadata = new ReviewMetadataStore(); metadata.Write(binding, new("a.JPG", null, ReviewFilter.All, []), [source, childSource]);
+            Assert.Equal("a.JPG", metadata.Read(binding)!.CursorName);
+            Assert.Equal("abc", File.ReadAllText(Path.Combine(source, "a.JPG"))); Assert.Equal("abc", File.ReadAllText(Path.Combine(childSource, "a.JPG")));
+        }
+        finally
+        {
+            owner?.Dispose();
+            if (child != null) { if (!child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); } child.Dispose(); }
+            await RemoveFixture(root);
+        }
+    }
+
     [Theory]
     [InlineData("staging", false)] [InlineData("published", true)] [InlineData("deleting", true)] [InlineData("deleted", false)]
     public async Task KillRecoversOnlyCompletedFilesAndCleansOnlyIdentifiedStaging(string phase, bool expectedPicked)

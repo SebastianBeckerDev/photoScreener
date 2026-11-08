@@ -5,6 +5,7 @@ using Microsoft.Win32.SafeHandles;
 namespace PhotoScreener.Infrastructure;
 public static partial class PlatformFileSystem
 {
+    private const int MacCloseOnExec = 0x01000000;
     public static string DirectoryIdentity(string path)
     {
         PathGuard.ValidateNoLinks(path);
@@ -43,7 +44,7 @@ public static partial class PlatformFileSystem
     private static SafeFileHandle OpenDirectoryAbsolute(string path, bool create = false)
     {
         var canonical = PathGuard.Canonical(path);
-        var descriptor = Open("/", 0x100100);
+        var descriptor = Open("/", 0x100100 | MacCloseOnExec);
         if (descriptor < 0) throw new IOException("Cannot open storage root.");
         var directory = new SafeFileHandle((IntPtr)descriptor, true);
         try
@@ -301,9 +302,14 @@ public static partial class PlatformFileSystem
     [LibraryImport("libc", EntryPoint = "openat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     private static partial int OpenAtArm64(int directory, string path, int flags, long unused3, long unused4, long unused5, long unused6, long unused7, uint mode);
     private static int OpenAt(int directory, string path, int flags, uint mode)
-        => OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+    {
+        // Set this atomically at open, not later with fcntl: another thread can
+        // start a child process between opening and marking a descriptor.
+        if (OperatingSystem.IsMacOS()) flags |= MacCloseOnExec;
+        return OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
             ? OpenAtArm64(directory, path, flags, 0, 0, 0, 0, 0, mode)
             : OpenAtFixed(directory, path, flags, mode);
+    }
     [LibraryImport("libc", EntryPoint = "mkdirat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     private static partial int MakeDirectoryAt(int directory, string path, uint mode);
     [LibraryImport("libc", EntryPoint = "unlinkat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
@@ -316,7 +322,21 @@ public static partial class PlatformFileSystem
     {
         var identity = Identity(stream.SafeFileHandle, out var links);
         if (links != 1) throw new IOException("Writer lock is an unsafe file alias.");
-        if (OperatingSystem.IsMacOS() && Flock(stream.SafeFileHandle.DangerousGetHandle().ToInt32(), 6) != 0)
-            throw new IOException("Another Photo Screener instance owns this export target.");
+        if (OperatingSystem.IsMacOS()) SetOwnership(stream, 6);
+    }
+    public static void ReleaseOwnership(FileStream stream)
+    {
+        // flock belongs to an open-file description, including forked copies.
+        // Explicit unlock releases ownership even before a child has reached exec.
+        if (OperatingSystem.IsMacOS()) SetOwnership(stream, 8);
+    }
+    private static void SetOwnership(FileStream stream, int operation)
+    {
+        while (Flock(stream.SafeFileHandle.DangerousGetHandle().ToInt32(), operation) != 0)
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error == 4) continue; // EINTR: a signal interrupted the call, not an ownership conflict.
+            throw new IOException(operation == 6 ? "Another Photo Screener instance owns this export target." : "Could not release export ownership.", new Win32Exception(error));
+        }
     }
 }
