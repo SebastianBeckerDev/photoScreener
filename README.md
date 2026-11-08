@@ -10,6 +10,7 @@ dotnet run --project src/PhotoScreener.Desktop -c Release -- "D:\Photos\Trip"
 ```
 
 Left/Right navigate. Space picks/unpicks without advancing; held Space is suppressed. Buttons offer All/Picked/Unpicked, project picks, folder navigation, an export override, Refresh, pending work, Retry and Cancel. Collapse folders/strip to give the complete oriented preview more space.
+See the [illustrated image-selection and PickStatus guide](docs/image-selection.md) for every state, verification, pending requests, failures, and shared picks.
 Hover any button for an explanation; the filter dropdown also has help text. Retry opens an ownership choice when a legacy export fits different original filenames with identical bytes.
 
 Use the mouse wheel over a photo to zoom around the pointer, drag with the left button to move a zoomed photo, and double-click or press Fit to return to the complete image. Zoom requests a higher-resolution preview in the background while retaining the visible image. Percentages are relative to the fit view; changing photos resets zoom to Fit.

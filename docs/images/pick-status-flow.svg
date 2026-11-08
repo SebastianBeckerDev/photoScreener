@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1120" viewBox="0 0 1280 1120" role="img" aria-labelledby="title desc">
+  <title id="title">PhotoScreener PickStatus: verified observations and requested changes</title>
+  <desc id="desc">Checking leads to Picked for a verified current copy, Unpicked for no associated copy, Outdated for a version mismatch, Unavailable when verification is unsafe or impossible, or Ambiguous when ownership is unclear. Space requests Copying or Removing; verified file operations produce Picked or Unpicked. Error is displayed over the latest observation, and a remaining verified copy still means Picked. All nine enum values are included.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:Segoe UI,Arial,sans-serif;fill:#334155}
+      .title{font-size:32px;font-weight:700;fill:#172554}
+      .heading{font-size:25px;font-weight:700;fill:#172554}
+      .name{font-size:24px;font-weight:700}
+      .body{font-size:19px}
+      .note{font-size:17px}
+      .edge{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
+      .rail{fill:none;stroke:#475569;stroke-width:2.5}
+      .box{stroke-width:2;rx:12}
+    </style>
+  </defs>
+  <rect width="1280" height="1120" fill="#f8fafc"/>
+  <text x="32" y="52" class="title">PickStatus: files establish picks, Space requests changes</text>
+  <text x="32" y="88" class="body">A completed, verified export copy proves a pick. Focusing a photo does not select it for export.</text>
+
+  <rect x="455" y="126" width="370" height="112" class="box" fill="#eef2ff" stroke="#4f46e5"/>
+  <text x="640" y="161" text-anchor="middle" class="name" style="fill:#312e81">Checking (0)</text>
+  <text x="640" y="191" text-anchor="middle" class="body">Check source revision, target,</text>
+  <text x="640" y="216" text-anchor="middle" class="body">file safety and matching bytes</text>
+  <path d="M640 238V278M150 278H1142" class="rail"/>
+  <path d="M150 278V335" class="edge"/><path d="M398 278V335" class="edge"/>
+  <path d="M646 278V335" class="edge"/><path d="M894 278V335" class="edge"/><path d="M1142 278V335" class="edge"/>
+  <rect x="72" y="298" width="156" height="24" fill="#f8fafc"/><text x="150" y="316" text-anchor="middle" class="note">Verified current copy</text>
+  <rect x="324" y="298" width="148" height="24" fill="#f8fafc"/><text x="398" y="316" text-anchor="middle" class="note">No candidate copy</text>
+  <rect x="576" y="298" width="140" height="24" fill="#f8fafc"/><text x="646" y="316" text-anchor="middle" class="note">Version mismatch</text>
+  <rect x="832" y="298" width="124" height="24" fill="#f8fafc"/><text x="894" y="316" text-anchor="middle" class="note">Cannot verify</text>
+  <rect x="1076" y="298" width="132" height="24" fill="#f8fafc"/><text x="1142" y="316" text-anchor="middle" class="note">Owner unclear</text>
+
+  <rect x="32" y="342" width="236" height="190" class="box" fill="#ecfdf5" stroke="#15803d"/>
+  <text x="50" y="380" class="name" style="fill:#14532d">Picked (1)</text>
+  <text x="50" y="416" class="body">At least one copy has</text><text x="50" y="442" class="body">the current source bytes.</text>
+  <text x="50" y="482" class="note">Safe association verified.</text><text x="50" y="511" class="note" font-weight="700">Observed pick: true</text>
+
+  <rect x="280" y="342" width="236" height="190" class="box" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="298" y="380" class="name" style="fill:#1e293b">Unpicked (2)</text>
+  <text x="298" y="416" class="body">Available target has</text><text x="298" y="442" class="body">no associated copy.</text>
+  <text x="298" y="482" class="note">Review history is separate.</text><text x="298" y="511" class="note" font-weight="700">Observed pick: false</text>
+
+  <rect x="528" y="342" width="236" height="190" class="box" fill="#fff7ed" stroke="#c2410c"/>
+  <text x="546" y="380" class="name" style="fill:#7c2d12">Outdated (6)</text>
+  <text x="546" y="416" class="body">Loaded source changed,</text><text x="546" y="442" class="body">or only different bytes.</text>
+  <text x="546" y="482" class="note">Older copies are preserved.</text><text x="546" y="511" class="note" font-weight="700">Observed pick: false</text>
+
+  <rect x="776" y="342" width="236" height="190" class="box" fill="#fff1f2" stroke="#be123c"/>
+  <text x="794" y="380" class="name" style="fill:#881337">Unavailable (7)</text>
+  <text x="794" y="416" class="body">Missing, inaccessible,</text><text x="794" y="442" class="body">changed or unsafe files.</text>
+  <text x="794" y="482" class="note">Reconnect / Refresh / Retry.</text><text x="794" y="511" class="note" font-weight="700">Observed pick: unknown</text>
+
+  <rect x="1024" y="342" width="224" height="190" class="box" fill="#faf5ff" stroke="#7e22ce"/>
+  <text x="1042" y="380" class="name" style="fill:#581c87">Ambiguous (8)</text>
+  <text x="1042" y="416" class="body">One copy fits different</text><text x="1042" y="442" class="body">original filenames.</text>
+  <text x="1042" y="482" class="note">Retry: choose the owner.</text><text x="1042" y="511" class="note" font-weight="700">Observed pick: unknown</text>
+
+  <text x="32" y="571" class="body">Unknown retains the last confirmed UI pick; it does not establish Unpicked.</text>
+  <line x1="32" y1="605" x2="1248" y2="605" stroke="#cbd5e1"/>
+  <text x="32" y="645" class="heading">Pending UI states are layered over file observations</text>
+  <text x="32" y="677" class="body">Copying, Removing and Error are enum names; currently these labels are derived by the UI.</text>
+
+  <rect x="32" y="706" width="180" height="112" class="box" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="122" y="752" text-anchor="middle" class="name">Unpicked</text><text x="122" y="785" text-anchor="middle" class="body">Observed false</text>
+  <path d="M226 763H274" class="edge"/><text x="250" y="735" text-anchor="middle" class="note">Space</text>
+  <rect x="288" y="706" width="230" height="112" class="box" fill="#eff6ff" stroke="#1d4ed8"/>
+  <text x="403" y="748" text-anchor="middle" class="name" style="fill:#1e3a8a">Copying (3)</text><text x="403" y="778" text-anchor="middle" class="body">Requested true</text><text x="403" y="802" text-anchor="middle" class="note">Queued or running</text>
+  <path d="M532 763H586" class="edge"/>
+  <rect x="600" y="706" width="320" height="112" class="box" fill="#fff" stroke="#64748b"/>
+  <text x="760" y="750" text-anchor="middle" class="body" font-weight="700">Stage + verify + publish</text><text x="760" y="783" text-anchor="middle" class="body">Original stays read-only</text>
+  <path d="M934 763H978" class="edge"/>
+  <rect x="992" y="706" width="256" height="112" class="box" fill="#ecfdf5" stroke="#15803d"/>
+  <text x="1120" y="750" text-anchor="middle" class="name" style="fill:#14532d">Picked</text><text x="1120" y="783" text-anchor="middle" class="body">Verified copy exists</text>
+
+  <rect x="32" y="862" width="180" height="112" class="box" fill="#ecfdf5" stroke="#15803d"/>
+  <text x="122" y="908" text-anchor="middle" class="name">Picked</text><text x="122" y="941" text-anchor="middle" class="body">Observed true</text>
+  <path d="M226 919H274" class="edge"/><text x="250" y="891" text-anchor="middle" class="note">Space</text>
+  <rect x="288" y="862" width="230" height="112" class="box" fill="#eff6ff" stroke="#1d4ed8"/>
+  <text x="403" y="904" text-anchor="middle" class="name" style="fill:#1e3a8a">Removing (4)</text><text x="403" y="934" text-anchor="middle" class="body">Requested false</text><text x="403" y="958" text-anchor="middle" class="note">Queued or running</text>
+  <path d="M532 919H586" class="edge"/>
+  <rect x="600" y="862" width="320" height="112" class="box" fill="#fff" stroke="#64748b"/>
+  <text x="760" y="906" text-anchor="middle" class="body" font-weight="700">Verify + remove current copies</text><text x="760" y="939" text-anchor="middle" class="body">Recheck the export folder</text>
+  <path d="M934 919H978" class="edge"/>
+  <rect x="992" y="862" width="256" height="112" class="box" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="1120" y="906" text-anchor="middle" class="name">Unpicked</text><text x="1120" y="939" text-anchor="middle" class="body">No current copy remains</text>
+
+  <rect x="32" y="1012" width="1216" height="82" class="box" fill="#fff7ed" stroke="#c2410c"/>
+  <text x="52" y="1046" class="name" style="fill:#7c2d12">Error (5)</text>
+  <text x="208" y="1046" class="body">On failure: recheck files, retain the observation, then Retry or Cancel.</text>
+  <text x="208" y="1076" class="body">A remaining verified copy still means Picked while Error is displayed.</text>
+</svg>
