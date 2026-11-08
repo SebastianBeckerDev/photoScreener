@@ -5,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using System.Collections.ObjectModel;
 using PhotoScreener.Desktop;
 using PhotoScreener.Desktop.Imaging;
 using SkiaSharp;
@@ -25,6 +26,16 @@ public sealed class RetainedPreviewTests
     }
     private static async Task Close(MainWindow window)
     { window.Close(); await Wait(() => !window.IsVisible); }
+    private static void ArrangeFixtureOrder(MainWindow window)
+    {
+        // Directory enumeration order differs between NTFS and APFS. This test
+        // exercises preview transitions through a known visible sequence, not sorting.
+        var strip = window.FindControl<ListBox>("Filmstrip")!;
+        var rows = Assert.IsType<ObservableCollection<PhotoRow>>(strip.ItemsSource);
+        var ordered = rows.OrderBy(row => row.Name, StringComparer.Ordinal).ToArray();
+        for (var index = 0; index < ordered.Length; index++) rows.Move(rows.IndexOf(ordered[index]), index);
+        strip.SelectedItem = null; strip.SelectedItem = ordered[0];
+    }
 
     [AvaloniaFact]
     public async Task NavigationRetainsOldImageMarksItsIdentityAndSkipsBlockedNextPhoto()
@@ -42,7 +53,7 @@ public sealed class RetainedPreviewTests
             window = new MainWindow([], null, images) { Width = 1700, Height = 950 };
             var firstFull = false; var thirdFull = false;
             window.PreviewPublished += (row, full) => { if (row.Name == "a.JPG" && full) firstFull = true; if (row.Name == "c.JPG" && full) thirdFull = true; };
-            window.Show(); await window.OpenFolder(root); await Wait(() => firstFull);
+            window.Show(); await window.OpenFolder(root); firstFull = false; ArrangeFixtureOrder(window); await Wait(() => firstFull);
             var image = window.FindControl<ZoomImage>("Preview")!; var previous = image.Source;
             window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
             Dispatcher.UIThread.RunJobs();
@@ -83,7 +94,7 @@ public sealed class RetainedPreviewTests
             WriteImage(root, "a.JPG", SKColors.Coral); File.WriteAllText(Path.Combine(root, "b.JPG"), "damaged image");
             window = new MainWindow(); var firstFull = false;
             window.PreviewPublished += (row, full) => { if (row.Name == "a.JPG" && full) firstFull = true; };
-            window.Show(); await window.OpenFolder(root); await Wait(() => firstFull);
+            window.Show(); await window.OpenFolder(root); firstFull = false; ArrangeFixtureOrder(window); await Wait(() => firstFull);
             var image = window.FindControl<ZoomImage>("Preview")!; var previous = image.Source;
             window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
             await Wait(() => window.FindControl<TextBlock>("PendingPreviewError")!.IsVisible);
