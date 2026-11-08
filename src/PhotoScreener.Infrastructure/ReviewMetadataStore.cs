@@ -22,9 +22,12 @@ public sealed class ReviewMetadataStore : IReviewMetadataStore
         var info = new FileInfo(path); if (info.Length > 8 * 1024 * 1024) throw new InvalidDataException("Optional review metadata exceeds its size limit.");
         using var stream = PlatformFileSystem.OpenOwned(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         var data = JsonSerializer.Deserialize<ReviewMetadata>(stream);
-        if (data?.SchemaVersion != 1) return null;
+        if (data?.SchemaVersion is not (1 or 2)) return null;
         if (data.Folders == null) throw new InvalidDataException("Optional review metadata has no folder map.");
-        var review = data.Folders.GetValueOrDefault(binding.SourceFolder);
+        // Version 2 folder keys are relative to the directory containing review.json.
+        // Version 1 remains readable at its original location; metadata never redirects a binding.
+        var key = data.SchemaVersion == 2 ? FolderKey(binding.SourceFolder, path) : binding.SourceFolder;
+        var review = data.Folders.FirstOrDefault(entry => PathGuard.Comparer.Equals(entry.Key, key)).Value;
         if (review != null && (review.ReviewedRevisions == null || !Enum.IsDefined(review.Filter))) throw new InvalidDataException("Optional review metadata has invalid history or filter.");
         return review;
     }
@@ -45,16 +48,19 @@ public sealed class ReviewMetadataStore : IReviewMetadataStore
                 using var existing = PlatformFileSystem.OpenOwned(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
                 if (existing.Length > 8 * 1024 * 1024) throw new InvalidDataException("Optional review metadata exceeds its size limit.");
                 var old = JsonSerializer.Deserialize<ReviewMetadata>(existing);
-                if (old?.SchemaVersion == 1 && old.Folders != null) foreach (var entry in old.Folders) if (entry.Value != null) folders[entry.Key] = entry.Value;
+                if (old?.SchemaVersion is 1 or 2 && old.Folders != null)
+                    foreach (var entry in old.Folders)
+                        if (entry.Value != null)
+                            folders[old.SchemaVersion == 1 ? FolderKey(entry.Key, path) : entry.Key] = entry.Value;
             }
         }
         catch (JsonException) { }
-        folders[binding.SourceFolder] = review;
+        folders[FolderKey(binding.SourceFolder, path)] = review;
         var temporary = Path.Combine(Path.GetDirectoryName(path)!, $"review-{Guid.NewGuid():N}.tmp"); string? identity = null;
         try
         {
             using (var file = PlatformFileSystem.OpenOwned(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { identity = PlatformFileSystem.Identity(file.SafeFileHandle, out _); JsonSerializer.Serialize(file, new ReviewMetadata(1, folders), Options); if (file.Length > 8 * 1024 * 1024) throw new InvalidDataException("Optional review metadata exceeds its size limit."); file.Flush(true); }
+            { identity = PlatformFileSystem.Identity(file.SafeFileHandle, out _); JsonSerializer.Serialize(file, new ReviewMetadata(2, folders), Options); if (file.Length > 8 * 1024 * 1024) throw new InvalidDataException("Optional review metadata exceeds its size limit."); file.Flush(true); }
             using var held = PlatformFileSystem.OpenDeleteCandidate(temporary);
             if (PlatformFileSystem.Identity(held.SafeFileHandle, out _) != identity) throw new IOException("Optional metadata staging was substituted.");
             PlatformFileSystem.ReplaceOwnedMetadata(held, temporary, path);
@@ -65,6 +71,14 @@ public sealed class ReviewMetadataStore : IReviewMetadataStore
             if (identity != null && File.Exists(temporary))
             { using var candidate = PlatformFileSystem.OpenDeleteCandidate(temporary); PlatformFileSystem.DeletePinned(candidate, temporary, identity); }
         }
+    }
+    private static string FolderKey(string folder, string metadataPath)
+    {
+        // Keep unresolved legacy/foreign-platform keys intact. Different Windows volumes
+        // also require an absolute key because no relative path can describe their relation.
+        if (!Path.IsPathFullyQualified(folder)) return folder;
+        var relative = Path.GetRelativePath(Path.GetDirectoryName(metadataPath)!, folder);
+        return Path.IsPathFullyQualified(relative) ? relative : relative.Replace(Path.DirectorySeparatorChar, '/');
     }
     public static string RevisionKey(Photo photo) => $"{photo.Name}|{photo.Revision.Length}|{photo.Revision.ModifiedTicks}|{photo.Revision.Identity}|{photo.Revision.ChangeToken}";
 }

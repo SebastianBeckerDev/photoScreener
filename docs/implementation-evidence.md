@@ -138,6 +138,12 @@ Remaining reference evidence: a complete 10,000-photo JPEG folder at the specifi
 
 ## Startup and folder focus follow-up
 
+### Portable review metadata (2026-11-08)
+
+Optional `review.json` schema 2 stores source-folder keys relative to the metadata directory, with `/` separators. Schema 1 absolute keys remain readable and migrate on the next successful write, preserving all shared-target folder entries. Separate Windows volumes retain absolute keys. Metadata never selects a mutation binding. Cursor restoration uses filename/length/mtime so copied files' new native identities do not prevent position recovery; actual picks and mutations retain their existing identity/content checks. See [portable review metadata](portable-review-metadata.md) for migration and relocation limits.
+
+Executed Windows Release suites: **52 core/infrastructure + 27 desktop tests passed (79 total)**. New cases copy/rename a deep `Export/Luminar/Again Exported` tree, delete the original, recover filter/history and verified picks, and preserve shared-folder history during schema migration. A headless UI test verifies that a copied folder restores its non-first cursor and Picked observation despite a different native file identity. Desktop output was isolated at `artifacts/relative-path-check` while the user's Debug app remained running. Targeted build: zero warnings/errors. No new photographic benchmark, Mac execution, or installed-package claim is made for this change; running Debug/package binaries require a later rebuild.
+
 Folder opening now establishes review keyboard focus independently of filter changes, and initial window layout restores review focus after automatic toolbar focus assignment. Cold and cached folder navigation tests send actual headless keyboard input without manually focusing the photo surface.
 
 User-local optional session settings remember the last successfully opened folder. Startup probes its accessibility on a worker before loading; missing/disconnected storage leaves a usable empty review with a reconnect/open hint and preserves the preference. Explicit command-line folders take precedence, and benchmarks do not read or change the user's session preference. Optional preference writes run outside the UI thread, coalesce through idle maintenance and flush after draining on close.

@@ -68,7 +68,11 @@ public partial class MainWindow
         if (pendingRestore is not { } restore || comparisonCompletedContext != restore.Context) return;
         pendingRestore = null;
         if (closing || restore.Context != ImageContext || interactionGeneration != restore.Interaction || activeFolder != restore.Folder || !folders.TryGetValue(restore.Folder, out var collection)) return;
-        var row = collection.FirstOrDefault(r => r.Name == restore.Review.CursorName && r.Photo.Revision == restore.Review.CursorRevision);
+        // Cursor metadata is a convenience, not content-verification authority. A copied
+        // photo has a new native identity/change token while its name, size and mtime survive.
+        var row = collection.FirstOrDefault(r => r.Name == restore.Review.CursorName &&
+            r.Photo.Revision.Length == restore.Review.CursorRevision?.Length &&
+            r.Photo.Revision.ModifiedTicks == restore.Review.CursorRevision?.ModifiedTicks);
         if (row != null) FocusPhoto(row);
         if (restore.Review.Filter != ReviewFilter.All) this.FindControl<ComboBox>("FilterBox")!.SelectedIndex = (int)restore.Review.Filter;
     }

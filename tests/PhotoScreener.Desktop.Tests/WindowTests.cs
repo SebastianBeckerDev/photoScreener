@@ -203,6 +203,48 @@ public sealed class WindowTests
         finally { Directory.Delete(root, true); }
     }
     [AvaloniaFact]
+    public async Task CopiedFolderRestoresCursorDespiteNewFileIdentities()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-copied-window-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "original"); var copy = Path.Combine(root, "relocated"); Directory.CreateDirectory(source);
+        MainWindow? window = null;
+        try
+        {
+            WriteImage(source, "a.JPG", 64, 48); WriteImage(source, "b.JPG", 64, 48);
+            var photo = new SourceCatalog().Enumerate(source, default).Single(p => p.Name == "b.JPG");
+            var binding = new ExportBinding(source, Path.Combine(source, "export")); var comparer = new FolderComparer();
+            using (var owner = new ExportWriter(binding, [source])) new ExportStore(comparer).Pick(photo, binding, () => true, default);
+            new ReviewMetadataStore().Write(binding, new(photo.Name, photo.Revision, ReviewFilter.All, [ReviewMetadataStore.RevisionKey(photo)]), [source]);
+            foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories).Prepend(source))
+                Directory.CreateDirectory(Path.Combine(copy, Path.GetRelativePath(source, directory)));
+            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var destination = Path.Combine(copy, Path.GetRelativePath(source, file)); File.Copy(file, destination);
+                File.SetLastWriteTimeUtc(destination, File.GetLastWriteTimeUtc(file));
+            }
+            var copiedPhoto = new SourceCatalog().Enumerate(copy, default).Single(p => p.Name == "b.JPG");
+            Assert.NotEqual(photo.Revision.Identity, copiedPhoto.Revision.Identity);
+            Directory.Delete(source, true);
+            window = new MainWindow(); window.Show(); await window.OpenFolder(copy);
+            var strip = window.FindControl<ListBox>("Filmstrip")!;
+            for (var i = 0; i < 300 && strip.SelectedItem is not PhotoRow { Name: "b.JPG", Picked: true }; i++)
+            { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            var selected = Assert.IsType<PhotoRow>(strip.SelectedItem);
+            Assert.Equal("b.JPG", selected.Name); Assert.True(selected.Picked);
+            Assert.Equal(0, window.FindControl<ComboBox>("FilterBox")!.SelectedIndex);
+            Assert.Equal(2, strip.Items.Count);
+        }
+        finally
+        {
+            if (window != null)
+            {
+                window.Close(); for (var i = 0; i < 300 && window.IsVisible; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+                Assert.False(window.IsVisible);
+            }
+            Directory.Delete(root, true);
+        }
+    }
+    [AvaloniaFact]
     public async Task ProjectPicksUseEachFoldersTargetAndSpaceKeepsTheChosenPhoto()
     {
         var root = Path.Combine(Path.GetTempPath(), "photoscreener-project-window-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);

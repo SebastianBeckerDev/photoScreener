@@ -23,6 +23,8 @@ Launching without a folder argument automatically opens the last successfully op
 
 Each folder defaults to its existing `export` child, created only on its first pick. An explicit target applies to that folder for the session; use `--export PATH` for an explicit launch binding. Old/new flat exports restore completed picks by full-content verification. No database or review JSON is required for picks. Optional history and cursor JSON live under the chosen target's `.photoscreener` directory.
 
+Review metadata uses relative source-folder paths, so moving/copying a photo tree together with its exports retains cursor, filter and history. Existing absolute-path metadata is upgraded on its next save. See [portable review metadata](docs/portable-review-metadata.md) for custom targets, migration and separate-volume limits.
+
 ```
 pwsh -File scripts/Publish-Rewrite.ps1
 pwsh -File scripts/Benchmark-Rewrite.ps1 -SourceFolder artifacts/corpus
