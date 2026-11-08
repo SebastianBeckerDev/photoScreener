@@ -36,7 +36,7 @@ public sealed class InterruptionTests
             child.Kill(true); await child.WaitForExitAsync();
             var staging = Path.Combine(binding.ExportRoot, ".photoscreener", "staging"); Directory.CreateDirectory(staging);
             var unrelated = Path.Combine(staging, "unrelated.part"); File.WriteAllText(unrelated, "keep");
-            using (var owner = new ExportWriter(binding, [root])) store.CleanupOwnedStaging(binding);
+            using (var owner = await AcquireAfterChildExit(child, binding, root)) store.CleanupOwnedStaging(binding);
             Assert.Equal("keep", File.ReadAllText(unrelated));
             Assert.Empty(Directory.EnumerateFiles(staging, "ps-v1-*.part"));
             Directory.Delete(Path.Combine(binding.ExportRoot, ".photoscreener"), true);
@@ -44,6 +44,19 @@ public sealed class InterruptionTests
             Assert.Equal(expectedPicked, observed.Picked); Assert.Equal("abc", File.ReadAllText(path));
         }
         finally { if (!child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); } await RemoveFixture(root); }
+    }
+    private static async Task<ExportWriter> AcquireAfterChildExit(Process child, ExportBinding binding, string root)
+    {
+        if (!child.HasExited) throw new InvalidOperationException("Recovery must wait for the killed child to exit.");
+        var wait = Stopwatch.StartNew();
+        while (true)
+        {
+            try { return new ExportWriter(binding, [root]); }
+            // Windows CI may retain a transient lock after the process has exited.
+            // Wait for ownership only; cleanup and recovery assertions run once.
+            catch (IOException error) when (OperatingSystem.IsWindows() && (error.HResult & 0xffff) is 32 or 33 && wait.Elapsed < TimeSpan.FromSeconds(3))
+            { await Task.Delay(20); }
+        }
     }
     private static async Task RemoveFixture(string root)
     {
