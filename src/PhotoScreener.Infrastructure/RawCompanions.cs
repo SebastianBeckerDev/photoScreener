@@ -12,12 +12,13 @@ public static class RawCompanions
         foreach (var jpeg in photos.Where(p => SourceCatalog.IsJpeg(p.Name)))
         {
             token.ThrowIfCancellationRequested(); PathGuard.ValidateNoLinks(jpeg.Folder);
-            var stem = Path.GetFileNameWithoutExtension(jpeg.Name);
+            var stem = PlatformFileSystem.AssociationName(Path.GetFileNameWithoutExtension(jpeg.Name));
+            var comparison = PlatformFileSystem.CaseSensitiveNames(jpeg.Folder) ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
             string? rawPath = null; var jpegNames = 0;
             foreach (var path in Directory.EnumerateFiles(jpeg.Folder))
             {
                 token.ThrowIfCancellationRequested();
-                if (!Path.GetFileNameWithoutExtension(path).Equals(stem, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!PlatformFileSystem.AssociationName(Path.GetFileNameWithoutExtension(path)).Equals(stem, comparison)) continue;
                 if (SourceCatalog.IsJpeg(path)) jpegNames++;
                 if (!SourceCatalog.IsNef(path)) continue;
                 if (rawPath != null) throw new IOException("Multiple NEF files match " + jpeg.Name + "; companion ownership is ambiguous.");

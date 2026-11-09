@@ -149,6 +149,7 @@ public sealed class ExportStore(FolderComparer comparer) : IExportStore
             {
                 PathGuard.ValidateExportFile(finalPath, binding);
                 using var existing = PlatformFileSystem.OpenReadCandidate(finalPath);
+                if (PlatformFileSystem.CaseSensitiveNames(photo.Folder)) PlatformFileSystem.RequireStoredName(existing.SafeFileHandle, Path.GetFileName(finalPath));
                 var identity = PlatformFileSystem.Identity(existing.SafeFileHandle, out _);
                 if (identity == photo.Revision.Identity || HashHandle(existing, token) != shaDigest) throw new IOException("Legacy filename collision: existing content differs or aliases the source. No file was overwritten.");
                 if (PathGuard.Revision(finalPath).Identity != identity) throw new IOException("Existing destination changed during verification.");

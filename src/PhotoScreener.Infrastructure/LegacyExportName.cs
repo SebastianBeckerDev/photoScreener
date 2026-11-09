@@ -12,9 +12,13 @@ public static partial class LegacyExportName
         var match = Suffix().Match(Path.GetFileNameWithoutExtension(name));
         return match.Success ? match.Groups[1].Value + Path.GetExtension(name) : name;
     }
-    public static bool Candidate(string original, string exported) =>
-        string.Equals(original, exported, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(original, StripSuffix(exported), StringComparison.OrdinalIgnoreCase);
+    public static bool Candidate(string original, string exported, bool caseSensitive = false)
+    {
+        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        original = PlatformFileSystem.AssociationName(original);
+        exported = PlatformFileSystem.AssociationName(exported);
+        return string.Equals(original, exported, comparison) || string.Equals(original, StripSuffix(exported), comparison);
+    }
     [GeneratedRegex(@"^(.+)\.[A-Za-z0-9_-]{4}$")]
     private static partial Regex Suffix();
 }

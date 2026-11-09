@@ -16,7 +16,7 @@ public partial class MainWindow
     private readonly record struct AssociationId(string Root, string Name, string Digest);
     private readonly Dictionary<AssociationId, HashSet<PhotoRow>> associations = [];
     private readonly Dictionary<PhotoRow, AssociationId> rowAssociations = [];
-    private AssociationId? AssociationKey(PhotoRow row) => row.IsExportOnly || row.VerifiedSourceSha256 == null ? null : new(OperatingSystem.IsWindows() ? row.Binding.ExportRoot.ToUpperInvariant() : row.Binding.ExportRoot, row.Name, row.VerifiedSourceSha256);
+    private AssociationId? AssociationKey(PhotoRow row) => row.IsExportOnly || row.VerifiedSourceSha256 == null ? null : new(OperatingSystem.IsWindows() ? row.Binding.ExportRoot.ToUpperInvariant() : row.Binding.ExportRoot, PlatformFileSystem.AssociationName(row.Name), row.VerifiedSourceSha256);
     private void ForgetAssociation(PhotoRow row)
     {
         if (row.SetSharedFolderCount(0) && current == row) Text("CurrentStatus", row.Status);

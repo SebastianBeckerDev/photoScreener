@@ -117,7 +117,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                     var sameTarget = AssociationSources.Read(request.Photo, index, knownBindings, token);
                     observation = comparer.Compare(request.Photo, index, sameTarget, token);
                     if (!observation.Picked.HasValue) throw new IOException(observation.Error ?? "Association is not yet safe to change.");
-                    var sameName = sameTarget.Where(p => p.Name == request.Photo.Name).ToArray();
+                    var sameName = sameTarget.Where(p => PlatformFileSystem.AssociationName(p.Name) == PlatformFileSystem.AssociationName(request.Photo.Name)).ToArray();
                     var digest = observation.Sha256 ?? (request.Photo.Revision.ChangeToken != null ? request.Sha256 : null);
                     if (sameName.Length > 1) digest ??= comparer.Hash(request.Photo.Path, request.Photo.Revision, token);
                     if (digest != null)

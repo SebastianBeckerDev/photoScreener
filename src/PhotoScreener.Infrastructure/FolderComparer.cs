@@ -37,7 +37,7 @@ public sealed class FolderComparer : IFolderComparer
     public long FullIndexScans => Interlocked.Read(ref fullIndexScans);
     public long AssociationIndexScans => Interlocked.Read(ref associationIndexScans);
     public long AssociationRevisionReads => Interlocked.Read(ref associationRevisionReads);
-    private static string Key(string name, long length) => name.ToUpperInvariant() + "|" + length;
+    internal static string Key(string name, long length) => PlatformFileSystem.AssociationName(name).ToUpperInvariant() + "|" + length;
     public ExportIndex Index(ExportBinding binding, CancellationToken token)
     { Interlocked.Increment(ref fullIndexScans); return BuildIndex(binding, token, null); }
     public ExportIndex IndexAssociation(Photo photo, ExportBinding binding, CancellationToken token)
@@ -70,6 +70,13 @@ public sealed class FolderComparer : IFolderComparer
             var prefix = originalName == null ? "" : Path.GetFileNameWithoutExtension(originalName) + ".";
             var wildcard = prefix.IndexOfAny(['*', '?']);
             if (wildcard >= 0) prefix = prefix[..wildcard];
+            // Managed wildcard matching does not apply APFS Unicode equivalence.
+            // Query the literal ASCII prefix and check complete names below.
+            if (OperatingSystem.IsMacOS())
+            {
+                var nonAscii = prefix.TakeWhile(c => c <= 127).Count();
+                prefix = prefix[..nonAscii];
+            }
             var options = new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false, MatchType = MatchType.Simple, MatchCasing = MatchCasing.CaseInsensitive };
             foreach (var path in Directory.EnumerateFiles(binding.ExportRoot, prefix + "*", options))
             {
@@ -105,9 +112,11 @@ public sealed class FolderComparer : IFolderComparer
             if (currentRevision != photo.Revision) return new(PickStatus.Outdated, [], Error: "Source revision changed; Refresh to review its current version.");
             if (entries == null) return new(PickStatus.Unpicked, []);
             var digest = Hash(photo.Path, photo.Revision, token); var copies = new List<AssociatedCopy>(); var mismatched = false;
+            var caseSensitive = PlatformFileSystem.CaseSensitiveNames(photo.Folder);
             foreach (var entry in entries)
             {
                 token.ThrowIfCancellationRequested();
+                if (!LegacyExportName.Candidate(photo.Name, entry.Name, caseSensitive)) continue;
                 PathGuard.ValidateExportFile(entry.Path, index.Binding);
                 if (PathGuard.Revision(entry.Path) != entry.Revision) throw new IOException("Export changed during comparison; retry.");
                 using (var handle = PlatformFileSystem.OpenReadCandidate(entry.Path))
@@ -117,12 +126,12 @@ public sealed class FolderComparer : IFolderComparer
                 }
                 if (Hash(entry.Path, entry.Revision, token) != digest) { mismatched = true; continue; }
                 string? explicitOwner; lock (gate) ExplicitOwners.TryGetValue(entry.Path, out explicitOwner);
-                if (explicitOwner != null && !string.Equals(explicitOwner, photo.Name, StringComparison.Ordinal)) continue;
+                if (explicitOwner != null && PlatformFileSystem.AssociationName(explicitOwner) != PlatformFileSystem.AssociationName(photo.Name)) continue;
                 if (explicitOwner == null)
                 {
                     foreach (var other in boundSources)
                     {
-                        if (other.Name == photo.Name || other.Revision.Length != entry.Revision.Length || !LegacyExportName.Candidate(other.Name, entry.Name)) continue;
+                        if (PlatformFileSystem.AssociationName(other.Name) == PlatformFileSystem.AssociationName(photo.Name) || other.Revision.Length != entry.Revision.Length || !LegacyExportName.Candidate(other.Name, entry.Name, PlatformFileSystem.CaseSensitiveNames(other.Folder))) continue;
                         if (Hash(other.Path, other.Revision, token) == digest)
                             return new(PickStatus.Ambiguous, [], digest, "Matching bytes fit different original names. Choose ownership before changing this export.");
                     }
