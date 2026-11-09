@@ -2,6 +2,8 @@
 
 The current self-contained package targets Apple Silicon and macOS 14+. Normal builds use .NET SDK 10.0.303. `scripts/package-macos.sh` assembles `artifacts/LumaPick.app`, including the native libraries and Finder/Dock icon.
 
+On 2026-11-09 the user deferred signing/notarization to a possible second step. The agreed current rewrite delivery is the unsigned self-contained Apple Silicon package. The steps below document the prepared future distribution path; Apple credentials are not required to complete the current agreed package delivery.
+
 ## Direct download: signing and notarization
 
 You need Apple Developer Program membership, a **Developer ID Application** certificate with its private key in the build Mac's keychain, Apple command-line tools providing `codesign`, `notarytool`, `stapler` and `spctl`, and internet access. Xcode or a suitable Command Line Tools installation provides the tools. Use `security find-identity -v -p codesigning` to find the exact certificate identity.

@@ -1,5 +1,9 @@
 # Rewrite implementation and evidence
 
+## Agreed completion scope (2026-11-09)
+
+The user explicitly deferred Mac signing/notarization to a possible second step. The current rewrite delivers the self-contained unsigned Apple Silicon package plus the existing reproducible signing/notarization scripts; missing Apple credentials are no longer a blocker for this agreed delivery. Historical signing gaps below describe the earlier scope and do not override this decision. Remaining acceptance gaps are representative photographic performance on Windows/Mac/Retina and physical USB/slow/network-storage validation. The accepted higher memory budget also continues to supersede the original fixed 512 MiB ceiling.
+
 ## Native mounted-image reconnect follow-up (2026-11-09)
 
 Existing unavailable-storage tests rename a directory. Additional opt-in native scenarios now detach/re-attach only their own validated 64 MiB NTFS/APFS images, separately for source/export and JPEG-only/JPEG+NEF. Detach requires the private volume's label, capacity and mount guards; reattach uses the original unique image path without formatting, refuses an occupied mount/Windows drive letter, and repeats native identity checks. No user drive/device is selected or ejected.
