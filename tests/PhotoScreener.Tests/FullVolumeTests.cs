@@ -16,6 +16,7 @@ public sealed class FullVolumeTheoryAttribute : TheoryAttribute
     }
 }
 
+[Collection("Native disk images")]
 public sealed class FullVolumeTests(ITestOutputHelper output)
 {
     [Fact]

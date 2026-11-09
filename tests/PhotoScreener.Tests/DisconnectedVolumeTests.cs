@@ -6,6 +6,7 @@ using Xunit.Abstractions;
 
 namespace PhotoScreener.Tests;
 
+[Collection("Native disk images")]
 public sealed class DisconnectedVolumeTests(ITestOutputHelper output)
 {
     [FullVolumeTheory]

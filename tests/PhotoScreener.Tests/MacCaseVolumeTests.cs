@@ -14,6 +14,7 @@ public sealed class MacCaseVolumeTheoryAttribute : TheoryAttribute
     }
 }
 
+[Collection("Native disk images")]
 public sealed class MacCaseVolumeTests
 {
     [MacCaseVolumeTheory]

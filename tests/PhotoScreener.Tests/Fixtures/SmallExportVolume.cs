@@ -2,8 +2,12 @@ using System.Diagnostics;
 using System.Xml;
 using System.Xml.Linq;
 using PhotoScreener.Infrastructure;
+using Xunit;
 
 namespace PhotoScreener.TestFixtures;
+
+[CollectionDefinition("Native disk images", DisableParallelization = true)]
+public sealed class NativeDiskImageCollection { }
 
 // Opt-in CI fixture: a new 64 MiB disk image, never a physical disk. Every
 // DiskPart selection names this fixture's image file; there is no select-disk,
