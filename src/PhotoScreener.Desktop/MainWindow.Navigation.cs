@@ -287,7 +287,7 @@ public partial class MainWindow
         SourceLink.Content = new TextBlock { Text = "Source: " + DirectoryCaption(activeFolder), TextTrimming = TextTrimming.CharacterEllipsis };
         ExportLink.Content = new TextBlock { Text = "Export: " + DirectoryCaption(activeExport), TextTrimming = TextTrimming.CharacterEllipsis };
         SourceLink.IsEnabled = ExportLink.IsEnabled = activeFolder != null;
-        ToolTip.SetTip(SourceLink, "Open source in Explorer / Finder · " + activeFolder);
+        UpdateSourceLinkTooltip();
         ToolTip.SetTip(ExportLink, "Open export in Explorer / Finder · " + activeExport + " · Created on first pick if missing.");
         TargetButton.IsVisible = ExportCandidateLabel.IsVisible = ExportMode;
         TargetButton.IsEnabled = activeFolder != null && candidateExport != null && !PathGuard.Comparer.Equals(candidateExport, activeExport);
@@ -314,6 +314,13 @@ public partial class MainWindow
         if (path == null) return "—";
         var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
         return name.Length > 0 ? name : path;
+    }
+    private void UpdateSourceLinkTooltip()
+    {
+        var history = activeFolder != null && reviewed.TryGetValue(activeFolder, out var revisions)
+            ? $"Review history: {revisions.Count} known assessed {(revisions.Count == 1 ? "revision" : "revisions")}. This is separate from picked photos."
+            : "Review history: Unknown. An unpicked photo is not necessarily already assessed.";
+        ToolTip.SetTip(SourceLink, "Open source in Explorer / Finder · " + (activeFolder ?? "Choose a source folder") + "\n" + history);
     }
     private async Task RefreshExportAvailability(CancellationToken token)
     {

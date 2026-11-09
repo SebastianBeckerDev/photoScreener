@@ -104,4 +104,57 @@ public sealed class MetadataTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact] public async Task ReadOnlyHistoryReportsPersistenceFailureWithoutUndoingCompletedUnpick()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-readonly-history-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var metadataDirectory = Path.Combine(root, "export", ".photoscreener");
+        var metadataPath = Path.Combine(metadataDirectory, "review.json");
+        UnixFileMode? originalMode = null; FileAttributes? originalAttributes = null;
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "a.JPG"), "abc");
+            var photo = new SourceCatalog().Enumerate(root, default).Single();
+            var binding = new ExportBinding(root, Path.Combine(root, "export"));
+            var comparer = new FolderComparer(); var metadata = new ReviewMetadataStore();
+            using (var owner = new ExportWriter(binding, [root])) new ExportStore(comparer).Pick(photo, binding, () => true, default);
+            var saved = new FolderReview(photo.Name, photo.Revision, ReviewFilter.Picked, [ReviewMetadataStore.RevisionKey(photo)]);
+            metadata.Write(binding, saved, [root]); var originalMetadata = File.ReadAllBytes(metadataPath);
+            PathGuard.ValidateNoLinks(metadataDirectory);
+            if (OperatingSystem.IsWindows())
+            {
+                originalAttributes = File.GetAttributes(metadataPath);
+                File.SetAttributes(metadataPath, originalAttributes.Value | FileAttributes.ReadOnly);
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                originalMode = File.GetUnixFileMode(metadataDirectory);
+                File.SetUnixFileMode(metadataDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            }
+
+            await using var coordinator = new MutationCoordinator(comparer); coordinator.RegisterPhoto(photo, binding);
+            MutationResult? result = null; string? persistenceError = null;
+            coordinator.Completed += value => result = value;
+            coordinator.MaintenanceFailed += message => persistenceError = message;
+            coordinator.Submit(new(photo, binding, false, false, 1));
+            coordinator.RunIdle("readonly-history", () => metadata.Write(binding, saved with { Filter = ReviewFilter.All }, [root]));
+            await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.NotNull(result); Assert.Null(result.Error); Assert.False(result.Observation.Picked);
+            Assert.False(string.IsNullOrWhiteSpace(persistenceError));
+            Assert.Empty(Directory.EnumerateFiles(binding.ExportRoot, "*.JPG"));
+            Assert.False(comparer.Compare(photo, comparer.Index(binding, default), [photo], default).Picked);
+            Assert.Equal(originalMetadata, File.ReadAllBytes(metadataPath));
+            Assert.Equal(ReviewFilter.Picked, metadata.Read(binding)!.Filter); // Optional saved view is not selection truth.
+            Assert.Equal("abc", File.ReadAllText(photo.Path));
+            Assert.Empty(Directory.EnumerateFiles(metadataDirectory, "review-*.tmp"));
+        }
+        finally
+        {
+            if (originalAttributes.HasValue && File.Exists(metadataPath)) File.SetAttributes(metadataPath, originalAttributes.Value);
+            if (OperatingSystem.IsMacOS() && originalMode.HasValue && Directory.Exists(metadataDirectory)) File.SetUnixFileMode(metadataDirectory, originalMode.Value);
+            Directory.Delete(root, true);
+        }
+    }
 }

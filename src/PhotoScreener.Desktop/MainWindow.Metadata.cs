@@ -41,11 +41,11 @@ public partial class MainWindow
     {
         mutations!.RunIdle("read:" + binding.SourceFolder, () =>
         {
-            FolderReview? review = null; string? error = null;
+            FolderReview? review = null; string? error = null; var historyReadFailed = false;
             try { watchers.Watch(binding.SourceFolder); watchers.Watch(binding.ExportRoot); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { error = "watch unavailable: " + e.Message; }
             try { review = metadata.Read(binding); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { error = e.Message; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { error = e.Message; historyReadFailed = true; }
             Dispatcher.UIThread.Post(() =>
             {
                 if (closing || context != ImageContext || activeFolder != binding.SourceFolder) return;
@@ -59,7 +59,8 @@ public partial class MainWindow
                         TryRestoreReview();
                     }
                 }
-                Text("FolderStatus", error != null ? "History / folder monitoring unavailable · " + error : "");
+                UpdateSourceLinkTooltip();
+                Text("FolderStatus", error != null ? (historyReadFailed ? "History Unknown · " : "Folder monitoring unavailable · ") + error : "");
             }, DispatcherPriority.Background);
         });
     }
@@ -81,6 +82,7 @@ public partial class MainWindow
         if (row.IsExportOnly) return;
         if (!reviewed.TryGetValue(row.Photo.Folder, out var history)) reviewed[row.Photo.Folder] = history = [];
         history.Add(ReviewMetadataStore.RevisionKey(row.Photo));
+        if (PathGuard.Comparer.Equals(activeFolder, row.Photo.Folder)) UpdateSourceLinkTooltip();
         cursor ??= row;
         if (cursor.IsExportOnly || !PathGuard.Comparer.Equals(cursor.Photo.Folder, row.Photo.Folder)) cursor = row;
         cursors[row.Photo.Folder] = cursor.Photo.Path;

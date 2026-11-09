@@ -30,6 +30,37 @@ public sealed class PreviewCancellationTests
         => images.Focus(new(photo, 800, generation, false, (lease, _) => lease?.Dispose()),
             new(photo, 1024, generation, true, (lease, error) => { lease?.Dispose(); if (error == null) completed.TrySetResult(); else completed.TrySetException(new IOException(error)); }));
 
+    [AvaloniaFact]
+    public async Task DisposalWaitsForNativeWorkAndRejectsLateLayoutRequestsWithoutCallbacksOrLeases()
+    {
+        using var scenario = new Scenario(); using var release = new ManualResetEventSlim();
+        var started = Signal(); var decoded = 0; var callbacks = 0;
+        var images = new PreviewScheduler(Path.Combine(scenario.Root, "cache"), (_, _, _, _) =>
+        { Interlocked.Increment(ref decoded); started.TrySetResult(); release.Wait(); return Bitmap(); });
+        images.SetContext(1, [scenario.Next]);
+        void Complete(ImageLease? lease, string? error) { lease?.Dispose(); Interlocked.Increment(ref callbacks); }
+        var quick = new ImageRequest(scenario.Old, 800, 1, false, Complete);
+        var detail = new ImageRequest(scenario.Old, 1024, 1, true, Complete);
+        images.Focus(quick, detail);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var first = images.DisposeAsync().AsTask(); var second = images.DisposeAsync().AsTask();
+            Assert.False(first.IsCompleted); Assert.False(second.IsCompleted);
+            release.Set(); await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+            // A virtualized control can attach/detach during a queued layout
+            // after its window finished draining and disposing the scheduler.
+            images.Thumbnail(new(scenario.Next, 160, 1, false, Complete, new object()));
+            images.CancelThumbnail(new object()); images.Focus(quick, detail); images.Refine(detail);
+            images.SetContext(2, [scenario.Next]); images.SetWarmPhotos([scenario.Next]);
+            images.SetNavigationPriority(scenario.Next, 1, 1); images.ViewportReady(); images.Prefetch([scenario.Next]); images.ClearFocus();
+            await images.DisposeAsync();
+            Assert.Equal(1, decoded); Assert.Equal(0, callbacks); Assert.Equal(0, images.CacheBytes);
+            Assert.Equal(0, images.QueueCount); Assert.False(images.ForegroundPending);
+        }
+        finally { release.Set(); await images.DisposeAsync(); }
+    }
+
     [Fact]
     public void AlreadyCancelledDecodeDoesNotTryToOpenItsSource()
     {

@@ -36,6 +36,8 @@ public sealed class PreviewScheduler : IAsyncDisposable
     private readonly ThumbnailDiskCache diskCache;
     private readonly Func<string, int, CancellationToken, bool, Bitmap> decode;
     private readonly Task[] workers;
+    private bool disposed;
+    private Task? disposal;
     private sealed class ActiveWork(ImageRequest request, CancellationTokenSource cancellation, int warmIndex)
     {
         public ImageRequest Request { get; } = request;
@@ -70,17 +72,19 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
+            if (disposed) return;
             activeQuick?.Cancellation.Cancel(); activeSecondary?.Cancellation.Cancel();
             generation = value; warming = photos; warmCursor = 0;
             priorityPhoto = null; protectedFocusKey = null; protectedFocusSide = 0;
             low = full = focusedQuick = null; awaitingQuick = false; visible.Clear(); adjacent.Clear(); firstViewportReady = false;
         }
     }
-    public void SetWarmPhotos(IReadOnlyList<Photo> photos) { lock (gate) warming = photos; Wake(secondarySignal); }
+    public void SetWarmPhotos(IReadOnlyList<Photo> photos) { lock (gate) { if (disposed) return; warming = photos; } Wake(secondarySignal); }
     public void SetNavigationPriority(Photo photo, int order, int direction)
     {
         lock (gate)
         {
+            if (disposed) return;
             if (priorityPhoto != photo) { protectedFocusKey = null; protectedFocusSide = 0; }
             priorityPhoto = photo; priorityOrder = order; navigationDirection = direction < 0 ? -1 : 1;
         }
@@ -119,7 +123,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
-            if (quick.Generation != generation || refinement.Generation != generation) return;
+            if (disposed || quick.Generation != generation || refinement.Generation != generation) return;
             if (priorityPhoto != quick.Photo)
             { priorityPhoto = quick.Photo; priorityOrder = quick.Order ?? 0; protectedFocusKey = null; protectedFocusSide = 0; }
             activeQuick?.Cancellation.Cancel();
@@ -134,7 +138,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
-            if (!request.Full || request.Generation != generation) return;
+            if (disposed || !request.Full || request.Generation != generation) return;
             if (priorityPhoto != null && priorityPhoto != request.Photo) return;
             priorityPhoto ??= request.Photo;
             activeQuick?.Cancellation.Cancel(); InterruptSecondary();
@@ -146,6 +150,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
+            if (disposed) return;
             activeQuick?.Cancellation.Cancel();
             if (activeSecondary is { Request.Full: true }) activeSecondary.Cancellation.Cancel();
             low = full = focusedQuick = null; awaitingQuick = false;
@@ -157,7 +162,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
-            if (request.Generation != generation) return;
+            if (disposed || request.Generation != generation) return;
             if (request.Owner != null && ReferenceEquals(activeSecondary?.Request.Owner, request.Owner)) activeSecondary.Cancellation.Cancel();
             // DataContext and visual attachment can request the same tile twice. Keep the newest
             // callback so its control generation receives the result instead of discarding it.
@@ -171,22 +176,29 @@ public sealed class PreviewScheduler : IAsyncDisposable
     {
         lock (gate)
         {
+            if (disposed) return;
             if (ReferenceEquals(activeSecondary?.Request.Owner, owner)) activeSecondary!.Cancellation.Cancel();
             for (var node = visible.First; node != null;)
             { var next = node.Next; if (ReferenceEquals(node.Value.Owner, owner)) visible.Remove(node); node = next; }
         }
     }
-    public void ViewportReady() { lock (gate) firstViewportReady = true; Wake(secondarySignal); }
+    public void ViewportReady() { lock (gate) { if (disposed) return; firstViewportReady = true; } Wake(secondarySignal); }
     public void Prefetch(IEnumerable<Photo> photos)
     {
         lock (gate)
         {
+            if (disposed) return;
             if (activeSecondary is { Request.Relaxed: true, Request.Side: 800 }) activeSecondary.Cancellation.Cancel();
             adjacent.Clear(); foreach (var photo in photos.Take(4)) adjacent.Enqueue(new(photo, 800, generation, false, (lease, _) => lease?.Dispose(), Relaxed: true));
         }
         Wake(secondarySignal);
     }
-    private static void Wake(SemaphoreSlim signal) { if (signal.CurrentCount == 0) try { signal.Release(); } catch (SemaphoreFullException) { } }
+    private static void Wake(SemaphoreSlim signal)
+    {
+        try { if (signal.CurrentCount == 0) signal.Release(); }
+        catch (SemaphoreFullException) { }
+        catch (ObjectDisposedException) { } // Disposal may follow a valid request before its wake outside gate.
+    }
     // Called while holding gate, so replacing a request cannot miss work between dequeue and decode.
     private ActiveWork? Begin(ImageRequest? request, bool urgent, int warmIndex = -1)
     {
@@ -344,10 +356,22 @@ public sealed class PreviewScheduler : IAsyncDisposable
             Wake(secondarySignal);
         }
     }
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (gate)
+        {
+            disposed = true;
+            return new(disposal ??= DisposeCore());
+        }
+    }
+    private async Task DisposeCore()
     {
         stop.Cancel(); await Task.WhenAll(workers);
-        lock (gate) { foreach (var entry in cache.Values) entry.Image.Release(); cache.Clear(); recency.Clear(); }
+        lock (gate)
+        {
+            foreach (var entry in cache.Values) entry.Image.Release(); cache.Clear(); recency.Clear(); bytes = 0;
+            visible.Clear(); adjacent.Clear(); warming = []; low = full = focusedQuick = null; awaitingQuick = false;
+        }
         stop.Dispose(); urgentSignal.Dispose(); secondarySignal.Dispose();
     }
     public void ClearCache()
