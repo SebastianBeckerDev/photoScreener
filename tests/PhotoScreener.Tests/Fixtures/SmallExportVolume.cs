@@ -66,22 +66,29 @@ internal sealed class SmallExportVolume : IAsyncDisposable
             // volume name. Verify both native identity fields without weakening
             // the private label, mount-path or fixed-capacity guards.
             var info = await Run("/usr/sbin/diskutil", "info", "-plist", Root);
-            using var reader = XmlReader.Create(new StringReader(info), new XmlReaderSettings
-            {
-                DtdProcessing = DtdProcessing.Ignore, XmlResolver = null, MaxCharactersInDocument = 1024 * 1024
-            });
-            var dictionary = XDocument.Load(reader).Root?.Element("dict")
-                ?? throw new IOException("Native disk information did not contain a volume dictionary.");
-            string? Value(string key) => dictionary.Elements("key").SingleOrDefault(e => e.Value == key)
-                ?.NextNode is XElement element && element.Name == "string" ? element.Value : null;
-            mountedLabel = Value("VolumeName") ?? "";
-            var mountPoint = Value("MountPoint");
+            var identity = ReadNativeIdentity(info);
+            mountedLabel = identity.Label;
+            var mountPoint = identity.MountPoint;
             if (string.IsNullOrEmpty(mountPoint) || !PathGuard.Comparer.Equals(PathGuard.Canonical(mountPoint), PathGuard.Canonical(Root)))
                 throw new IOException($"Test disk image mounted at an unexpected path: {mountPoint}.");
         }
         if (!drive.IsReady || mountedLabel != label || drive.TotalSize is < 16 * 1024 * 1024 or > 80 * 1024 * 1024)
             throw new IOException($"Refusing to use an unverified test disk image: mount={drive.Name}, label={mountedLabel}, expected={label}, size={drive.TotalSize}.");
         PathGuard.ValidateNoLinks(Root);
+    }
+    internal static (string Label, string? MountPoint) ReadNativeIdentity(string info)
+    {
+        using var reader = XmlReader.Create(new StringReader(info), new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Ignore, XmlResolver = null, MaxCharactersInDocument = 1024 * 1024
+        });
+        var dictionary = XDocument.Load(reader).Root?.Element("dict")
+            ?? throw new IOException("Native disk information did not contain a volume dictionary.");
+        // Select the immediate next element: a plist can preserve whitespace
+        // nodes, and looking ahead for any string could read another key's value.
+        string? Value(string key) => dictionary.Elements("key").SingleOrDefault(e => e.Value == key)
+            ?.ElementsAfterSelf().FirstOrDefault() is XElement element && element.Name == "string" ? element.Value : null;
+        return (Value("VolumeName") ?? "", Value("MountPoint"));
     }
     private void ValidateFixture()
     {

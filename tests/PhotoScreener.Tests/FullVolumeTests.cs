@@ -18,6 +18,23 @@ public sealed class FullVolumeTheoryAttribute : TheoryAttribute
 
 public sealed class FullVolumeTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void NativePlistIdentityHandlesPreservedWhitespaceAndRejectsWrongValueTypes()
+    {
+        var identity = SmallExportVolume.ReadNativeIdentity("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0"><dict xml:space="preserve">
+                <key>VolumeName</key>
+                <string>PSFULL-private</string>
+                <key>MountPoint</key>
+                <string>/private/tmp/owned/mount</string>
+            </dict></plist>
+            """);
+        Assert.Equal("PSFULL-private", identity.Label); Assert.Equal("/private/tmp/owned/mount", identity.MountPoint);
+        var invalid = SmallExportVolume.ReadNativeIdentity("<plist><dict><key>VolumeName</key><false/><key>MountPoint</key><string>/other</string></dict></plist>");
+        Assert.Equal("", invalid.Label); Assert.Equal("/other", invalid.MountPoint);
+    }
     [FullVolumeTheory]
     [InlineData(false)] [InlineData(true)]
     public async Task FullExportDiskCannotPublishAPartialPickAndRetryCopiesOriginalBytes(bool withNef)
