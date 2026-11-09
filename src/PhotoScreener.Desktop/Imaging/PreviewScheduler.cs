@@ -168,7 +168,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
         }
         catch (OperationCanceledException) { }
     }
-    private string Key(ImageRequest r) => $"{r.Photo.Path}|{r.Photo.Revision}|{r.Side}|oriented-v1";
+    private string Key(ImageRequest r) => $"{r.Photo.Path}|{r.Photo.Revision}|{r.Side}|oriented-v2";
     private void Execute(ActiveWork work)
     {
         var request = work.Request; var token = work.Cancellation.Token;

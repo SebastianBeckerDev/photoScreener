@@ -176,6 +176,12 @@ Release suites: 17 desktop and 36 core/infrastructure tests passed (53 total), i
 
 ## Export and zoom follow-up
 
+### PNG orientation follow-up (2026-11-09)
+
+Native PNG fixtures exposed that the pinned Skia PNG codec ignores `eXIf` orientation: seven non-default orientations failed before the fix. The preview decoder now inspects PNG chunk headers and a CRC-verified TIFF orientation field off the UI thread, seeks past pixel data, restores the codec stream position, and applies the same orientation matrix to quick/full/tile output. Inspection is bounded to 4,096 chunks and a 64 KiB EXIF payload; malformed/oversized metadata is optional, and cancellation is checked between reads/chunks. Cache rendering policy is now `oriented-v2` so old incorrectly oriented thumbnails regenerate.
+
+Local isolated Release desktop suite: **54 passed**, without build warnings. Fifteen new cases cover all eight actual PNG orientation transforms at both stages, big-endian EXIF after IDAT with fewer than 128 metadata bytes read, invalid offsets/counts/orientation/CRC, oversized metadata, cancellation/stream restoration, and concurrent quick/full 12 MP RGBA PNG decoding with premultiplied transparency and unchanged source hashes. This is native functional evidence; separate photographic PNG latency and Mac execution remain pending.
+
 Mutations enumerate source names in all known folders sharing the captured target before ownership decisions, including originals not yet published by incremental UI enumeration. Metadata is read only for relevant candidate names. Each mutation uses a fresh export index, and successful deletion is followed by another authoritative comparison. Tests cover an undiscovered natural dotted-name owner, an externally added duplicate between requests, and a duplicate created during deletion; unsafe ownership remains unresolved and remaining copies remain Picked with an error.
 
 File revisions now include native change time (Windows `FILE_BASIC_INFO.ChangeTime`, macOS `st_ctimespec`). Cached content cannot be reused merely because file size, identity and modification time match. The test changes bytes in place and restores the modification time, verifies the new revision and preserves the older export. Filesystems without a supported change token bypass digest/preview cache hits. Native macOS execution passes in the CI runs recorded above.

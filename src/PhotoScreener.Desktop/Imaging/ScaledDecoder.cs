@@ -30,6 +30,7 @@ public static class ScaledDecoder
         using var encoded = headerCodec.EncodedFormat == SKEncodedImageFormat.Jpeg && input.Length <= MaximumEncodedBytes ? ReadEncoded(input, token) : null;
         using var memoryCodec = encoded != null ? SKCodec.Create(encoded) ?? throw new InvalidDataException("JPEG memory decode could not be initialized.") : null;
         var codec = memoryCodec ?? headerCodec;
+        var origin = codec.EncodedFormat == SKEncodedImageFormat.Png ? PngOrientation.Read(input, token) ?? codec.EncodedOrigin : codec.EncodedOrigin;
         var original = codec.Info;
         if ((long)original.Width * original.Height > 60_000_000) throw new InvalidDataException("Image exceeds the 60 MP decode limit.");
         var ratio = Math.Min(1f, (float)longestSide / Math.Max(original.Width, original.Height));
@@ -47,7 +48,7 @@ public static class ScaledDecoder
             var result = codec.GetPixels(decoded.Info, decoded.GetPixels());
             if (result != SKCodecResult.Success) throw new InvalidDataException($"Image decode failed: {result}.");
             token.ThrowIfCancellationRequested();
-            var swapped = (int)codec.EncodedOrigin >= 5;
+            var swapped = (int)origin >= 5;
             var width = Math.Max(1, (int)Math.Round((swapped ? original.Height : original.Width) * ratio));
             var height = Math.Max(1, (int)Math.Round((swapped ? original.Width : original.Height) * ratio));
             var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
@@ -58,7 +59,7 @@ public static class ScaledDecoder
                     ?? throw new InvalidDataException("Preview surface allocation failed.");
                 var canvas = surface.Canvas;
                 canvas.Scale((float)width / (swapped ? size.Height : size.Width), (float)height / (swapped ? size.Width : size.Height));
-                canvas.SetMatrix(SKMatrix.Concat(canvas.TotalMatrix, Orientation(codec.EncodedOrigin, size.Width, size.Height)));
+                canvas.SetMatrix(SKMatrix.Concat(canvas.TotalMatrix, Orientation(origin, size.Width, size.Height)));
                 using var paint = new SKPaint { FilterQuality = SKFilterQuality.High, IsAntialias = false };
                 canvas.DrawBitmap(decoded, 0, 0, paint);
                 canvas.Flush(); token.ThrowIfCancellationRequested();
