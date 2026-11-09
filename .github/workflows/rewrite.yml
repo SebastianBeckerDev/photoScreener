@@ -10,6 +10,8 @@ jobs:
           dotnet-version: 10.0.303
       - run: dotnet restore PhotoScreener.Rewrite.sln --locked-mode
       - run: dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
+        env:
+          LUMAPICK_TEST_DISK_IMAGES: '1'
       - shell: pwsh
         run: ./scripts/Publish-Rewrite.ps1
   macos:
@@ -25,5 +27,7 @@ jobs:
       - run: test "$(uname -m)" = arm64
       - run: dotnet restore PhotoScreener.Rewrite.sln --locked-mode
       - run: dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
+        env:
+          LUMAPICK_TEST_DISK_IMAGES: '1'
       - run: bash scripts/package-macos.sh
       - run: bash scripts/test-macos-package.sh
