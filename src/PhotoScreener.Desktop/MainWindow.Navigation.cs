@@ -284,8 +284,8 @@ public partial class MainWindow
         if (resetCandidate && candidateExport == null && activeFolder != null) candidateExport = bindings.Resolve(activeFolder).ExportRoot;
         var activeExport = activeFolder == null ? null : bindings.Resolve(activeFolder).ExportRoot;
         if (observedExport != activeExport || rebuild) { observedExport = activeExport; exportAvailable = null; }
-        SourceLink.Content = new TextBlock { Text = "Source: " + (activeFolder ?? "—"), TextTrimming = TextTrimming.CharacterEllipsis };
-        ExportLink.Content = new TextBlock { Text = "Export: " + (activeExport ?? "—"), TextTrimming = TextTrimming.CharacterEllipsis };
+        SourceLink.Content = new TextBlock { Text = "Source: " + DirectoryCaption(activeFolder), TextTrimming = TextTrimming.CharacterEllipsis };
+        ExportLink.Content = new TextBlock { Text = "Export: " + DirectoryCaption(activeExport), TextTrimming = TextTrimming.CharacterEllipsis };
         SourceLink.IsEnabled = ExportLink.IsEnabled = activeFolder != null;
         ToolTip.SetTip(SourceLink, "Open source in Explorer / Finder · " + activeFolder);
         ToolTip.SetTip(ExportLink, "Open export in Explorer / Finder · " + activeExport + " · Created on first pick if missing.");
@@ -309,6 +309,12 @@ public partial class MainWindow
         _ = RefreshRecents(token);
         _ = RefreshExportAvailability(token);
     }
+    private static string DirectoryCaption(string? path)
+    {
+        if (path == null) return "—";
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        return name.Length > 0 ? name : path;
+    }
     private async Task RefreshExportAvailability(CancellationToken token)
     {
         var source = activeFolder; var target = source == null ? null : bindings.Resolve(source).ExportRoot;
@@ -318,7 +324,10 @@ public partial class MainWindow
             var available = exportAvailable == true || await ReadDirectories(() => DirectoryAvailable(target), token);
             if (closing || token.IsCancellationRequested || source != activeFolder || target != bindings.Resolve(source!).ExportRoot) return;
             var changed = exportAvailable != available; exportAvailable = available;
-            ExportLink.Content = new TextBlock { Text = (available ? "Export: " : "Export (unavailable / not created): ") + target, TextTrimming = TextTrimming.CharacterEllipsis };
+            ExportLink.Content = new TextBlock { Text = "Export: " + DirectoryCaption(target) + (available ? "" : " · missing"), TextTrimming = TextTrimming.CharacterEllipsis };
+            ExportLink.Foreground = new SolidColorBrush(Color.Parse(available ? "#BCC5D4" : "#E8B889"));
+            ToolTip.SetTip(ExportLink, "Open export in Explorer / Finder · " + target +
+                (available ? "" : " · Unavailable or not created yet. Export directories are created on the first pick."));
             if (changed && ExportMode) _ = RefreshRecents(token);
         }
         catch (OperationCanceledException) { }

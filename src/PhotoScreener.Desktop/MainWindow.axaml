@@ -40,11 +40,11 @@
     <Border Grid.Column="2" Name="ReviewSurface" Focusable="True" Background="#0A0C10">
       <Grid>
         <local:ZoomImage Name="Preview" Margin="8" />
-        <Border Margin="16" Padding="7,4" CornerRadius="4" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#CC111318" IsHitTestVisible="False"><TextBlock Name="ZoomStatus" Text="Fit" Foreground="#DCE3EC" /></Border>
-        <Border Name="CurrentPhotoBadge" IsVisible="False" Margin="16,50,16,16" Padding="9,6" CornerRadius="5" HorizontalAlignment="Left" VerticalAlignment="Top" MaxWidth="420" Background="#DD111318" IsHitTestVisible="False">
+        <Border Name="CurrentPhotoBadge" IsVisible="False" Margin="16" Padding="9,6" CornerRadius="5" HorizontalAlignment="Left" VerticalAlignment="Top" MaxWidth="420" Background="#DD111318" IsHitTestVisible="False">
           <StackPanel Spacing="3"><TextBlock Name="CurrentName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><TextBlock Name="CurrentStatus" Foreground="#8FDBB4" FontSize="11" TextWrapping="Wrap" /></StackPanel>
         </Border>
         <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom" Orientation="Horizontal" Margin="16" Spacing="4">
+          <TextBlock Name="ZoomStatus" IsVisible="False" Text="Fit" Foreground="#DCE3EC" Background="#DD1C2028" Padding="7,4" VerticalAlignment="Center" IsHitTestVisible="False" />
           <Button Name="ZoomOutButton" Content="−" Background="#DD1C2028" Foreground="#F4FFF9" ToolTip.Tip="Zoom out around the center of the view." />
           <Button Name="ZoomInButton" Content="+" Background="#DD1C2028" Foreground="#F4FFF9" ToolTip.Tip="Zoom in around the center of the view. Mouse-wheel zoom follows the pointer." />
           <Button Name="ZoomFitButton" Content="Fit" Background="#DD1C2028" Foreground="#F4FFF9" ToolTip.Tip="Show the complete photo. Click the image for a 100% detail preview, then click again to return to Fit." />
@@ -107,16 +107,15 @@
         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
         <ListBox.ItemTemplate><DataTemplate><StackPanel Width="132" Spacing="3"><local:ThumbnailView Width="128" Height="88" /><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><TextBlock Text="{Binding Status}" ToolTip.Tip="{Binding Status}" TextTrimming="CharacterEllipsis" FontSize="10" Foreground="#8FDBB4" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
       </ListBox>
-      <Grid Grid.Row="2" Name="StripFooter" ColumnDefinitions="*,Auto,Auto" Margin="8,5" Background="#171A21">
-        <StackPanel Spacing="2">
-          <Grid ColumnDefinitions="*,*">
-            <Button Name="SourceLink" Content="Source: —" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" FontSize="11" Padding="6,3" Margin="0,0,3,0" ToolTip.Tip="Open the current source directory in Explorer or Finder." />
-            <Button Grid.Column="1" Name="ExportLink" Content="Export: —" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" FontSize="11" Padding="6,3" ToolTip.Tip="Open the designated export directory in Explorer or Finder. A default export is created only when picking a photo." />
-          </Grid>
-          <TextBlock Name="FolderStatus" TextTrimming="CharacterEllipsis" FontSize="10" Foreground="#8B96A8" />
-        </StackPanel>
-        <ComboBox Grid.Column="1" Name="FilterBox" Width="112" SelectedIndex="0" VerticalAlignment="Center" Margin="8,0" ToolTip.Tip="Show all photos, picked photos, or unpicked photos in the current folder."><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
-        <Button Grid.Column="2" Name="ActivityButton" Content="No pending changes" VerticalAlignment="Center" ToolTip.Tip="Show pending and failed export changes with retry and cancellation actions." />
+      <Grid Grid.Row="2" Name="StripFooter" ColumnDefinitions="*,Auto,Auto,Auto" Margin="8,5" Background="#171A21">
+        <Grid ColumnDefinitions="*,Auto,*" VerticalAlignment="Center">
+          <Button Name="SourceLink" Content="Source: —" Background="Transparent" Foreground="#BCC5D4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="12" Padding="6,3" ToolTip.Tip="Open the current source directory in Explorer or Finder." />
+          <TextBlock Grid.Column="1" Text="→" Foreground="#697586" VerticalAlignment="Center" Margin="6,0" />
+          <Button Grid.Column="2" Name="ExportLink" Content="Export: —" Background="Transparent" Foreground="#BCC5D4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="12" Padding="6,3" ToolTip.Tip="Open the designated export directory in Explorer or Finder. A default export is created only when picking a photo." />
+        </Grid>
+        <TextBlock Grid.Column="1" Name="FolderStatus" IsVisible="False" MaxWidth="220" TextTrimming="CharacterEllipsis" FontSize="11" Foreground="#E8B889" VerticalAlignment="Center" Margin="8,0" />
+        <ComboBox Grid.Column="2" Name="FilterBox" Width="112" SelectedIndex="0" VerticalAlignment="Center" Margin="8,0" ToolTip.Tip="Show all photos, picked photos, or unpicked photos in the current folder."><ComboBoxItem Content="All" /><ComboBoxItem Content="Picked" /><ComboBoxItem Content="Unpicked" /></ComboBox>
+        <Button Grid.Column="3" Name="ActivityButton" Content="Activity" VerticalAlignment="Center" ToolTip.Tip="Show pending and failed export changes with retry and cancellation actions." />
       </Grid>
     </Grid>
   </Grid>

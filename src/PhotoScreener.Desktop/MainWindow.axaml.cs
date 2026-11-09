@@ -47,6 +47,8 @@ public partial class MainWindow : Window
     {
         var control = this.FindControl<TextBlock>(name)!; control.Text = value;
         if (name is "FolderStatus" or "CurrentStatus") ToolTip.SetTip(control, value);
+        if (name == "FolderStatus") control.IsVisible = !string.IsNullOrWhiteSpace(value);
+        if (name == "ZoomStatus") control.IsVisible = value != "Fit" && !string.IsNullOrWhiteSpace(value);
     }
     public MainWindow() : this([]) { }
     public MainWindow(string[] args, SessionSettingsStore? settings = null) : this(args, settings, null) { }
@@ -235,7 +237,7 @@ public partial class MainWindow : Window
         Surface.Focus();
         var folderInteraction = interactionGeneration;
         Images.SetContext(context, []);
-        Text("FolderStatus", activeFolder + " · discovering…");
+        Text("FolderStatus", "Loading folder…");
         if (!refresh && completeFolders.Contains(activeFolder) && folders.TryGetValue(activeFolder, out var warm))
         {
             foreach (var row in warm) { RegisterRow(row); rows.Add(row); }
@@ -284,7 +286,7 @@ public partial class MainWindow : Window
             if (!remembered) RememberLastFolder(captured);
             if (collection.Count == 0) ClearFocus();
             Images.SetWarmPhotos(collection.Select(r => r.Photo).ToArray());
-            Text("FolderStatus", captured + " → " + binding.ExportRoot + " · review history Unknown");
+            Text("FolderStatus", "");
             BeginComparison(collection, context);
             ReadMetadataAndWatch(binding, context, folderInteraction);
         }
@@ -493,7 +495,7 @@ public partial class MainWindow : Window
         var count = projectView ? (projectCounts.Sum(c => c.Total), projectCounts.Sum(c => c.Picked), projectCounts.Sum(c => c.Checking)) : activeFolder != null ? counts.GetValueOrDefault(activeFolder) : (0, 0, 0);
         Text("Counts", $"{count.Item2} picked / {count.Item1}{(projectView && !projectComplete ? "+" : "")} · {count.Item3} checking · {mutations?.PendingCount ?? 0} pending" + (projectView && unmatchedProjectRows.Count > 0 ? $" · {unmatchedProjectRows.Count} unmatched exports" : ""));
         var errors = operationRows.Count(r => r.HasError);
-        ActivityButton.Content = errors > 0 ? $"{errors} failed · {mutations?.PendingCount ?? 0} pending" : mutations?.PendingCount > 0 ? $"{mutations.PendingCount} pending" : "No pending changes";
+        ActivityButton.Content = errors > 0 ? $"{errors} failed · {mutations?.PendingCount ?? 0} pending" : mutations?.PendingCount > 0 ? $"{mutations.PendingCount} pending" : "Activity";
         RetryButton.IsEnabled = errors > 0; CancelButton.IsEnabled = operationRows.Count > 0;
     }
     // Extended by the comparison/mutation and performance slices.

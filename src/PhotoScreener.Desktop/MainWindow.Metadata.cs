@@ -59,7 +59,7 @@ public partial class MainWindow
                         TryRestoreReview();
                     }
                 }
-                Text("FolderStatus", binding.SourceFolder + " → " + binding.ExportRoot + (error != null ? " · history Unknown: " + error : reviewed.TryGetValue(binding.SourceFolder, out var history) ? $" · {history.Count} assessed revisions" : " · review history Unknown"));
+                Text("FolderStatus", error != null ? "History / folder monitoring unavailable · " + error : "");
             }, DispatcherPriority.Background);
         });
     }

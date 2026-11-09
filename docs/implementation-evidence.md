@@ -20,6 +20,12 @@ Final [CI run 42598348203](https://github.com/SebastianBeckerDev/photoScreener/a
 
 The native full-disk gate is now executed on both private image filesystems: NTFS reports 65,990,656 total / 544,768 available bytes; APFS reports 67,067,904 total / 2,416,640 available bytes even after its filler hits native ENOSPC. Both JPEG-only and JPEG+NEF exports reach staging and fail with native no-space errors, publish no partial picks, clean owned staging, preserve unrelated/source bytes, and succeed with byte-identical exports after releasing the filler. APFS's optimistic available-space figure is not treated as proof of allocatable capacity. These owned-image tests do not establish physical SSD-disconnection, network-volume or photographic performance gates.
 
+### Footer and Fit follow-up
+
+At the user's screenshot feedback, the footer now uses one row: source/export directory names with full-path action tooltips, a short amber missing-export marker, filter and Activity. It no longer repeats the source→target paths or normal optional-history bookkeeping below the links. Loading, unavailable-directory and maintenance errors remain visible on demand, with complete details in tooltips. The redundant upper-left Fit badge is removed; zoom/detail-loading status appears beside the lower-right controls only when needed, and the collapsed-strip current-photo badge occupies the freed upper-left position.
+
+The existing **65 desktop tests pass** after the change. `artifacts/performance/ui-footer-final.json` / `artifacts/ui-footer-final.png` record an inspected real Windows window with eight generated JPEGs, eight handled keys, two completed mutations, one stable full preview and no export/maintenance errors. The rendered footer occupies one row and the fitted image has no upper-left Fit badge. This is a short rendering check, not reference photographic performance evidence.
+
 The replacement is in `src/`. On 2026-11-06 the user explicitly requested removal of the old WPF version, superseding its original preservation requirement. The WPF project, old solution/launcher and its IDE cache have been removed; the isolated compatibility fixture remains. Start the rewrite with `buildAndRunRewrite.bat`. Contract: `reverse-engineered-specification/`.
 
 | Package | Implemented deliverable | Executed evidence |

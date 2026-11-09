@@ -16,7 +16,7 @@ Load directory children only when their branch expands. Probe reachability async
 
 Right: a collapsible photo-information panel containing the existing capture values and histogram. Bottom: a filmstrip with the existing centered selection and filename/pick state under each thumbnail, without a duplicated current-file/status title row. Panel-edge handles remain visible after collapse; remember their state and widths locally, and keep the image usable in smaller windows.
 
-The slim footer retains source/export links (open Explorer/Finder), All/Picked/Unpicked and compact activity/error feedback. A not-yet-created default export is labelled accordingly; browsing does not create it. The old top-level Folders, Info, Strip, Fit, Project picks, Work, Retry and Cancel pending controls disappear. Directory actions move into the left panel; zoom controls move onto the image.
+The slim, single-row footer retains source/export links (open Explorer/Finder), All/Picked/Unpicked and compact activity/error feedback. Links show directory names; tooltips contain their complete paths. A missing export receives a short amber marker and an explanatory tooltip; browsing does not create it. Normal review does not repeat paths or optional-history bookkeeping in a second line. Loading, unavailable-directory and maintenance-error notices appear only when needed, with complete details in their tooltips. The old top-level Folders, Info, Strip, Fit, Project picks, Work, Retry and Cancel pending controls disappear. Directory actions move into the left panel; zoom controls move onto the image.
 
 ## Feedback and recovery
 
@@ -26,7 +26,7 @@ Running and failed copies remain accessible through the footer's compact status/
 
 ## Zoom and input
 
-Click-to-detail executes on pointer release after distinguishing a click from a drag. A movement threshold prevents panning from resetting zoom. Wheel zoom remains anchored at the pointer; −, + and Fit appear at the lower-right image edge. Buttons and thumbnail selection restore review keyboard focus, while tree/text/dialog input keeps its own navigation semantics.
+Click-to-detail executes on pointer release after distinguishing a click from a drag. A movement threshold prevents panning from resetting zoom. Wheel zoom remains anchored at the pointer; −, + and Fit appear at the lower-right image edge. The zoom percentage/loading status sits beside those controls and is hidden when fitted; there is no duplicate Fit badge above the photo. Buttons and thumbnail selection restore review keyboard focus, while tree/text/dialog input keeps its own navigation semantics.
 
 100% refers to the detailed decoded preview at physical display pixels, including DPI/Retina. The initial fit-size bitmap may provide no extra detail: clicking must request the higher-resolution focused preview before completing the 100% intent, retain the image while loading, and reject late results after navigation. The existing 3840-pixel decode cap and 16×-Fit zoom bound remain the current limits. For small photos already shown at the available detail, Fit can remain unchanged. Original-resolution cropped inspection is a separate future enhancement.
 
