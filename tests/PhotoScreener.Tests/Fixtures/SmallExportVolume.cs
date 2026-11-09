@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Xml;
+using System.Xml.Linq;
 using PhotoScreener.Infrastructure;
 
 namespace PhotoScreener.TestFixtures;
@@ -47,18 +49,38 @@ internal sealed class SmallExportVolume : IAsyncDisposable
                 volume.attachAttempted = true;
                 volume.helperOutput = await Run("/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", volume.Root, volume.image);
             }
-            volume.ValidateMountedVolume(); return volume;
+            await volume.ValidateMountedVolume(); return volume;
         }
         catch { await volume.DisposeAsync(); throw; }
     }
-    public void ValidateMountedVolume()
+    public async Task ValidateMountedVolume()
     {
         ValidateFixture();
         DriveInfo drive;
         try { drive = Drive; }
         catch (InvalidOperationException e) { throw new IOException("Test disk image did not mount: " + helperOutput, e); }
-        if (!drive.IsReady || drive.VolumeLabel != label || drive.TotalSize is < 16 * 1024 * 1024 or > 80 * 1024 * 1024)
-            throw new IOException("Refusing to use an unverified test disk image.");
+        var mountedLabel = drive.VolumeLabel;
+        if (OperatingSystem.IsMacOS())
+        {
+            // Unix DriveInfo.VolumeLabel returns the mount path, not the native
+            // volume name. Verify both native identity fields without weakening
+            // the private label, mount-path or fixed-capacity guards.
+            var info = await Run("/usr/sbin/diskutil", "info", "-plist", Root);
+            using var reader = XmlReader.Create(new StringReader(info), new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Ignore, XmlResolver = null, MaxCharactersInDocument = 1024 * 1024
+            });
+            var dictionary = XDocument.Load(reader).Root?.Element("dict")
+                ?? throw new IOException("Native disk information did not contain a volume dictionary.");
+            string? Value(string key) => dictionary.Elements("key").SingleOrDefault(e => e.Value == key)
+                ?.NextNode is XElement element && element.Name == "string" ? element.Value : null;
+            mountedLabel = Value("VolumeName") ?? "";
+            var mountPoint = Value("MountPoint");
+            if (string.IsNullOrEmpty(mountPoint) || !PathGuard.Comparer.Equals(PathGuard.Canonical(mountPoint), PathGuard.Canonical(Root)))
+                throw new IOException($"Test disk image mounted at an unexpected path: {mountPoint}.");
+        }
+        if (!drive.IsReady || mountedLabel != label || drive.TotalSize is < 16 * 1024 * 1024 or > 80 * 1024 * 1024)
+            throw new IOException($"Refusing to use an unverified test disk image: mount={drive.Name}, label={mountedLabel}, expected={label}, size={drive.TotalSize}.");
         PathGuard.ValidateNoLinks(Root);
     }
     private void ValidateFixture()

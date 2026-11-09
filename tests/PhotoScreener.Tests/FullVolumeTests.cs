@@ -36,7 +36,7 @@ public sealed class FullVolumeTests(ITestOutputHelper output)
             File.WriteAllText(Path.Combine(binding.ExportRoot, "unrelated.txt"), "preserve");
         }
         var filler = Path.Combine(volume.Root, "filler.bin");
-        volume.ValidateMountedVolume();
+        await volume.ValidateMountedVolume();
         using (var fill = new FileStream(filler, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             var block = new byte[65536]; new Random(708).NextBytes(block);
@@ -62,7 +62,7 @@ public sealed class FullVolumeTests(ITestOutputHelper output)
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(binding.ExportRoot, ".photoscreener", "staging")));
         Assert.Equal("preserve", File.ReadAllText(Path.Combine(binding.ExportRoot, "unrelated.txt")));
         output.WriteLine($"{volume.Drive.DriveFormat} disk image: {volume.Drive.TotalSize} bytes, {freeBefore} free before failure; NEF={withNef}; error={result.Error}");
-        volume.ValidateMountedVolume(); File.Delete(filler);
+        await volume.ValidateMountedVolume(); File.Delete(filler);
         coordinator.Submit(new(photo, binding, true, false, 2));
         await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Null(result!.Error); Assert.True(result.Observation.Picked);
