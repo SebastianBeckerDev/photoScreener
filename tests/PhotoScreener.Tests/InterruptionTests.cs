@@ -88,7 +88,7 @@ public sealed class InterruptionTests
             using (var owner = await AcquireAfterChildExit(child, binding, root)) store.CleanupOwnedStaging(binding);
             Assert.Equal("keep", File.ReadAllText(unrelated));
             Assert.Empty(Directory.EnumerateFiles(staging, "ps-v1-*.part"));
-            Directory.Delete(Path.Combine(binding.ExportRoot, ".photoscreener"), true);
+            await RemoveFixture(root, metadataOnly: true);
             var observed = comparer.Compare(photo, comparer.Index(binding, default), [photo], default);
             Assert.Equal(expectedPicked, observed.Picked); Assert.Equal("abc", File.ReadAllText(path));
         }
@@ -107,16 +107,21 @@ public sealed class InterruptionTests
             { await Task.Delay(20); }
         }
     }
-    private static async Task RemoveFixture(string root)
+    private static async Task RemoveFixture(string root, bool metadataOnly = false)
     {
         var absolute = PathGuard.Canonical(root);
         if (!PathGuard.Comparer.Equals(Path.GetDirectoryName(absolute), PathGuard.Canonical(Path.GetTempPath())) || !Path.GetFileName(absolute).StartsWith("photoscreener-kill-", StringComparison.Ordinal))
             throw new IOException("Refusing to remove a path outside this test's temporary fixture location.");
         PathGuard.ValidateNoLinks(absolute);
+        // Removing optional metadata is fixture preparation for the no-ledger
+        // recovery assertion. Apply the same bounded sharing-violation handling
+        // as final disposal, without retrying recovery or source assertions.
+        var target = metadataOnly ? Path.Combine(absolute, "export", ".photoscreener") : absolute;
+        PathGuard.ValidateNoLinks(target);
         var cleanup = Stopwatch.StartNew();
         while (true)
         {
-            try { Directory.Delete(absolute, true); return; }
+            try { Directory.Delete(target, true); return; }
             // CI can retain a transient source read handle just after process exit.
             // Retry only fixture disposal, never the recovery/source-safety assertions.
             catch (IOException error) when (OperatingSystem.IsWindows() && (error.HResult & 0xffff) is 32 or 33 && cleanup.Elapsed < TimeSpan.FromSeconds(3))
