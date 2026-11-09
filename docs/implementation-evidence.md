@@ -126,6 +126,8 @@ S-06 now has opt-in native disk-image tests for JPEG and JPEG+NEF. CI sets `LUMA
 
 First native run `42580129671` passed the Windows job, including the two new cases. Both Mac cases stopped during fixture creation because UDRW was supplied to hdiutil's `-type` instead of `-format`; the app's 70 existing core and 55 desktop cases still passed. The helper flag is corrected, and CI console logging now includes detailed test output so filesystem/capacity/free-space and actual copy error can be verified directly. Fresh Mac execution remains pending.
 
+Detailed run `42580462132` passed **72 core + 55 desktop tests on Windows**. Both NTFS disk-image cases report 65,990,656-byte filesystems with 544,768 bytes free before the actual “There is not enough space on the disk” copy error; JPEG/NEF error, cleanup, source protection and Retry assertions pass. The Mac helper rejected explicit `-format` for blank size-based images because it requires `-srcfolder`/`-srcdevice`. The fixture now uses the minimal size/filesystem/label create command, whose default image is writable. Mac full-volume evidence remains pending; its existing 125 cases continue to pass.
+
 ```powershell
 dotnet restore PhotoScreener.Rewrite.sln --locked-mode
 dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers
