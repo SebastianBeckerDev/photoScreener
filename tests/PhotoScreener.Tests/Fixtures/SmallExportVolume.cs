@@ -91,6 +91,34 @@ internal sealed class SmallExportVolume : IAsyncDisposable
             ?.ElementsAfterSelf().FirstOrDefault() is XElement element && element.Name == "string" ? element.Value : null;
         return (Value("VolumeName") ?? "", Value("MountPoint"));
     }
+    public async Task Disconnect()
+    {
+        // This transition is allowed only after validating our own mounted image.
+        // Never resolve or detach an arbitrary user-supplied drive/device.
+        await ValidateMountedVolume();
+        if (OperatingSystem.IsWindows()) await DiskPart("select vdisk file=" + Quote(image), "detach vdisk");
+        else await Run("/usr/bin/hdiutil", "detach", Root);
+        attachAttempted = false;
+        if (MountedAtRoot()) throw new IOException("Private test disk image remained mounted after detach.");
+    }
+    public async Task Reconnect()
+    {
+        ValidateFixture(); PathGuard.ValidateNoLinks(image);
+        if (attachAttempted || MountedAtRoot() || !File.Exists(image)) throw new IOException("Refusing to attach over an existing or unknown mount.");
+        if (OperatingSystem.IsWindows() && Environment.GetLogicalDrives().Any(d => PathGuard.Comparer.Equals(d, Root)))
+            throw new IOException("Private image's drive letter was claimed by another volume.");
+        attachAttempted = true;
+        if (OperatingSystem.IsWindows())
+        {
+            await DiskPart("select vdisk file=" + Quote(image), "attach vdisk");
+            // Windows may restore this image's previous drive letter itself.
+            if (!MountedAtRoot()) await DiskPart("select vdisk file=" + Quote(image), "select partition=1", "assign letter=" + Root[0]);
+        }
+        else helperOutput = await Run("/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", Root, image);
+        await ValidateMountedVolume();
+    }
+    private bool MountedAtRoot() => DriveInfo.GetDrives().Any(d =>
+        PathGuard.Comparer.Equals(PathGuard.Canonical(d.Name), PathGuard.Canonical(Root)) && d.IsReady);
     private void ValidateFixture()
     {
         var absolute = PathGuard.Canonical(Directory);

@@ -1,5 +1,11 @@
 # Rewrite implementation and evidence
 
+## Native mounted-image reconnect follow-up (2026-11-09)
+
+Existing unavailable-storage tests rename a directory. Additional opt-in native scenarios now detach/re-attach only their own validated 64 MiB NTFS/APFS images, separately for source/export and JPEG-only/JPEG+NEF. Detach requires the private volume's label, capacity and mount guards; reattach uses the original unique image path without formatting, refuses an occupied mount/Windows drive letter, and repeats native identity checks. No user drive/device is selected or ejected.
+
+Each test completes a real pick, drains/releases writer handles, detaches one image, verifies Unavailable with unknown observed pick state, submits an unpick that must fail without publication, reattaches at the same mount, refreshes the source revision, recovers unchanged completed copies without review JSON, and explicitly unpicks both JPEG and its current NEF while preserving original/unrelated bytes. An unavailable export must not be recreated under an empty Mac mountpoint. Fresh native execution remains pending. These owned-image transitions cover native mounting/recovery behavior, not physical USB removal during an active transfer, slow/network-volume timing or photographic performance.
+
 ## Native APFS filename policy follow-up (2026-11-09)
 
 New opt-in image tests use a case-sensitive APFS source with distinct `a.JPG` / `A.JPG` originals and both case-sensitive and case-insensitive APFS targets. The helper creates only unique private 64 MiB images, retaining its label, capacity, mount and no-link guards. The first native run `42606639439` failed during image creation: hdiutil requires `Case-sensitive APFS`, not diskutil's `APFSX` alias. After correcting that test setup, run `42607102032` executes both actual profiles and exposes application association failures: the second pick is Ambiguous on both targets, and the case-sensitive target cannot complete an otherwise representable independent pick. All previous 75 core and 69 desktop Mac cases still pass; the Windows job passes. These failures are not compilation failures or photographic performance measurements.
