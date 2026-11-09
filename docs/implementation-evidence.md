@@ -124,6 +124,8 @@ Input feedback is separate from drawing submission and physical display. Synthet
 
 S-06 now has opt-in native disk-image tests for JPEG and JPEG+NEF. CI sets `LUMAPICK_TEST_DISK_IMAGES=1`; normal local tests skip this fixture. Each case creates its own 64 MiB image (Windows VHD/NTFS via DiskPart; Mac APFS via hdiutil), validates the unique volume label/capacity, fills it to less than one copy chunk of free space, and runs the real mutation coordinator. Assertions require a staged copy error, observed Unpicked, no final JPEG/NEF or owned partial files, preserved unrelated files/source bytes, then a successful Retry after releasing the filler. Image formatting/selection is limited to the newly named temporary image; disposal detaches that image and removes its validated temporary fixture. Windows opt-in requires elevation. Local compilation passed without warnings; both native cases remain unexecuted until the new CI run completes. This is disk-failure correctness evidence, not reference-workload performance.
 
+First native run `42580129671` passed the Windows job, including the two new cases. Both Mac cases stopped during fixture creation because UDRW was supplied to hdiutil's `-type` instead of `-format`; the app's 70 existing core and 55 desktop cases still passed. The helper flag is corrected, and CI console logging now includes detailed test output so filesystem/capacity/free-space and actual copy error can be verified directly. Fresh Mac execution remains pending.
+
 ```powershell
 dotnet restore PhotoScreener.Rewrite.sln --locked-mode
 dotnet test PhotoScreener.Rewrite.sln -c Release --no-restore --disable-build-servers

@@ -41,7 +41,7 @@ internal sealed class SmallExportVolume : IAsyncDisposable
             else
             {
                 volume.Root = Path.Combine(volume.Directory, "mount"); System.IO.Directory.CreateDirectory(volume.Root);
-                await Run("/usr/bin/hdiutil", "create", "-size", "64m", "-fs", "APFS", "-volname", volume.label, "-type", "UDRW", volume.image);
+                await Run("/usr/bin/hdiutil", "create", "-size", "64m", "-fs", "APFS", "-volname", volume.label, "-format", "UDRW", volume.image);
                 volume.attachAttempted = true;
                 volume.helperOutput = await Run("/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", volume.Root, volume.image);
             }
