@@ -74,6 +74,7 @@ public sealed class FolderComparer : IFolderComparer
             // Query the literal ASCII prefix and check complete names below.
             if (OperatingSystem.IsMacOS())
             {
+                prefix = PlatformFileSystem.AssociationName(prefix);
                 var nonAscii = prefix.TakeWhile(c => c <= 127).Count();
                 prefix = prefix[..nonAscii];
             }
