@@ -9,6 +9,8 @@ public interface IReadOnlySource
 public sealed class SourceCatalog : IReadOnlySource
 {
     public static bool IsImage(string path) => Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png";
+    public static bool IsJpeg(string path) => Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg";
+    public static bool IsNef(string path) => Path.GetExtension(path).Equals(".nef", StringComparison.OrdinalIgnoreCase);
     public IEnumerable<Photo> Enumerate(string folder, CancellationToken token)
     {
         PathGuard.ValidateNoLinks(folder);

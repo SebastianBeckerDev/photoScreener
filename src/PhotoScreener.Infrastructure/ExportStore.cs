@@ -51,6 +51,40 @@ public sealed class ExportStore(FolderComparer comparer) : IExportStore
     public Action<string>? Phase { get; set; }
     public long CopiedBytes { get; private set; }
     public AssociatedCopy Pick(Photo photo, ExportBinding binding, Func<bool> stillWanted, CancellationToken token)
+        => PickSelection(photo, binding, [photo], [binding], stillWanted, token);
+    internal AssociatedCopy PickSelection(Photo photo, ExportBinding binding, IReadOnlyList<Photo> associatedPhotos,
+        IReadOnlyList<ExportBinding> knownBindings, Func<bool> stillWanted, CancellationToken token)
+    {
+        var companions = RawCompanions.Find(associatedPhotos, token);
+        // Publish complete RAW companions before the JPEG, which alone establishes
+        // selection on resume. A complete orphan RAW after interruption is preserved
+        // and safely reused on retry; it never counts as a selected image.
+        foreach (var raw in companions)
+        {
+            var index = comparer.IndexAssociation(raw, binding, token);
+            var observation = comparer.Compare(raw, index, AssociationSources.Read(raw, index, knownBindings, token), token);
+            if (!observation.Picked.HasValue) throw new IOException("NEF companion: " + (observation.Error ?? "Association could not be verified."));
+        }
+        var rawCopies = new List<(Photo Source, AssociatedCopy Copy)>();
+        foreach (var raw in companions)
+        {
+            try { rawCopies.Add((raw, PickOne(raw, binding, stillWanted, token))); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            { throw new IOException("NEF companion " + raw.Name + ": " + e.Message, e); }
+        }
+        return PickOne(photo, binding, stillWanted, token, () =>
+        {
+            foreach (var raw in rawCopies)
+            {
+                PathGuard.ValidateExportFile(raw.Copy.Path, binding);
+                if (PathGuard.Revision(raw.Copy.Path) != raw.Copy.Revision || comparer.Hash(raw.Copy.Path, raw.Copy.Revision, token) != raw.Copy.Sha256)
+                    throw new IOException("NEF export changed before JPEG publication; retry to verify the companion.");
+            }
+            foreach (var raw in rawCopies)
+                if (PathGuard.Revision(raw.Source.Path) != raw.Source.Revision) throw new IOException("NEF companion changed before JPEG publication; retry with its current version.");
+        });
+    }
+    private AssociatedCopy PickOne(Photo photo, ExportBinding binding, Func<bool> stillWanted, CancellationToken token, Action? beforePublication = null)
     {
         using var background = PlatformFileSystem.BackgroundWork();
         using var exportContext = PlatformFileSystem.EnterExportRoot(binding.ExportRoot);
@@ -97,6 +131,10 @@ public sealed class ExportStore(FolderComparer comparer) : IExportStore
             token.ThrowIfCancellationRequested();
             if (!stillWanted()) throw new OperationCanceledException("Pick was superseded before publication.");
             if (PathGuard.Revision(photo.Path) != photo.Revision) throw new IOException("Source changed before publication; refresh to review its current version.");
+            beforePublication?.Invoke();
+            token.ThrowIfCancellationRequested();
+            if (!stillWanted()) throw new OperationCanceledException("Pick was superseded during companion verification.");
+            if (PathGuard.Revision(photo.Path) != photo.Revision) throw new IOException("Source changed during companion verification; refresh before picking.");
             var final = Path.Combine(binding.ExportRoot, LegacyExportName.FromDigest(photo.Name, md5Digest));
             PathGuard.ValidateNoLinks(final);
             if (File.Exists(final)) VerifyExisting(final);
@@ -123,6 +161,37 @@ public sealed class ExportStore(FolderComparer comparer) : IExportStore
         }
     }
     public void Remove(Photo photo, ExportBinding binding, IReadOnlyList<AssociatedCopy> copies, CancellationToken token)
+        => RemoveSelection(photo, binding, copies, [photo], [binding], token);
+    internal void RemoveSelection(Photo photo, ExportBinding binding, IReadOnlyList<AssociatedCopy> copies,
+        IReadOnlyList<Photo> associatedPhotos, IReadOnlyList<ExportBinding> knownBindings, CancellationToken token)
+    {
+        var removals = new List<(Photo Photo, IReadOnlyList<AssociatedCopy> Copies)>();
+        foreach (var raw in RawCompanions.Find(associatedPhotos, token))
+        {
+            var index = comparer.IndexAssociation(raw, binding, token);
+            var observation = comparer.Compare(raw, index, AssociationSources.Read(raw, index, knownBindings, token), token);
+            if (!observation.Picked.HasValue || observation.Error != null)
+                throw new IOException("NEF companion: " + (observation.Error ?? "Association could not be verified."));
+            removals.Add((raw, observation.Copies));
+        }
+        // Keep the authoritative JPEG when a RAW removal fails, so retry/error
+        // state remains truthful instead of claiming a fully completed unpick.
+        foreach (var removal in removals)
+        {
+            try
+            {
+                RemoveOne(removal.Photo, binding, removal.Copies, token);
+                var fresh = comparer.IndexAssociation(removal.Photo, binding, token);
+                var remaining = comparer.Compare(removal.Photo, fresh, AssociationSources.Read(removal.Photo, fresh, knownBindings, token), token);
+                if (remaining.Picked != false || remaining.Error != null)
+                    throw new IOException(remaining.Error ?? "NEF copies changed during removal; retry to remove remaining current copies.");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            { throw new IOException("NEF companion " + removal.Photo.Name + ": " + e.Message, e); }
+        }
+        RemoveOne(photo, binding, copies, token);
+    }
+    private void RemoveOne(Photo photo, ExportBinding binding, IReadOnlyList<AssociatedCopy> copies, CancellationToken token)
     {
         using var background = PlatformFileSystem.BackgroundWork();
         using var exportContext = PlatformFileSystem.EnterExportRoot(binding.ExportRoot);

@@ -74,7 +74,7 @@ public sealed class FolderComparer : IFolderComparer
             foreach (var path in Directory.EnumerateFiles(binding.ExportRoot, prefix + "*", options))
             {
                 token.ThrowIfCancellationRequested();
-                if (!SourceCatalog.IsImage(path)) continue;
+                if (originalName != null && SourceCatalog.IsNef(originalName) ? !SourceCatalog.IsNef(path) : !SourceCatalog.IsImage(path)) continue;
                 var name = Path.GetFileName(path);
                 if (originalName != null && !LegacyExportName.Candidate(originalName, name)) continue;
                 if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;

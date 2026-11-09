@@ -176,6 +176,14 @@ Release suites: 17 desktop and 36 core/infrastructure tests passed (53 total), i
 
 ## Export and zoom follow-up
 
+### JPEG/NEF companions (2026-11-09)
+
+The user explicitly requested RAW+JPEG support, superseding the initial RAW-companion deferral for Nikon NEF. JPEGs remain the reviewed/counted/authoritative selected images. Same-stem NEFs in the captured source folder are copied unchanged with the existing one-pass MD5/SHA-256 stage/verify/no-clobber protocol and their own exact legacy suffix. NEFs are never decoded as previews or added to source/project review rows. PNG behavior is unchanged.
+
+Complete current NEFs publish before the authoritative JPEG; source/export RAW revisions, current intent and cancellation are checked again immediately before JPEG publication. A complete orphan NEF after interruption is preserved/reused and cannot establish a pick. Unpick verifies/removes all current companion copies before the JPEG and rechecks for externally inserted copies; a RAW error keeps the JPEG picked for retry. Older/missing-original/ambiguous/unrelated RAW copies remain preserved. Shared JPEG associations copy each folder's current NEF, including different RAW contents. An explicit pick/Retry also repairs a missing companion of an existing JPEG pick; folder open performs no bulk RAW export. See [JPEG/NEF behavior](raw-jpeg-companions.md).
+
+Executed Windows Release infrastructure suite: **70 passed**. Seventeen NEF cases cover unchanged streamed bytes/case, no-metadata JPEG-only selection recovery, orphan RAW, PNG exclusion, collisions, current/older/duplicate RAW versions, source/export edits before JPEG publication, cancellation/latest intent, missing originals, ambiguous dotted ownership, shared targets, missing-companion repair, a locked export and a native hard-linked RAW source alias. Release desktop suite: **55 passed**, including actual Space events on a JPEG+NEF window, one review row, stable preview/focus, both exports and unchanged source hashes. Desktop output remains isolated from the user's running app. Native Mac CI and refreshed packages for this change remain pending.
+
 ### PNG orientation follow-up (2026-11-09)
 
 Native PNG fixtures exposed that the pinned Skia PNG codec ignores `eXIf` orientation: seven non-default orientations failed before the fix. The preview decoder now inspects PNG chunk headers and a CRC-verified TIFF orientation field off the UI thread, seeks past pixel data, restores the codec stream position, and applies the same orientation matrix to quick/full/tile output. Inspection is bounded to 4,096 chunks and a 64 KiB EXIF payload; malformed/oversized metadata is optional, and cancellation is checked between reads/chunks. Cache rendering policy is now `oriented-v2` so old incorrectly oriented thumbnails regenerate.

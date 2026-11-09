@@ -14,6 +14,8 @@ dotnet run --project src/PhotoScreener.Desktop -c Release -- "D:\Photos\Trip"
 ```
 
 Left/Right navigate. Space picks/unpicks without advancing; held Space is suppressed. Buttons offer All/Picked/Unpicked, project picks, folder navigation, an export override, Refresh, pending work, Retry and Cancel. Collapse folders/strip to give the complete oriented preview more space.
+
+With RAW+JPEG captures, review stays on the JPEG. A same-stem Nikon NEF in the same folder is copied unchanged with the pick and removed as a verified current companion on unpick. See [JPEG/NEF pairing and recovery](docs/raw-jpeg-companions.md).
 During navigation the previous photo stays visible, slightly dimmed, until the newly selected photo's preview is ready. A loading badge names both the requested photo and the retained image; a failed decode shows an error there. Zoom/panning resumes when the selected photo arrives. Keyboard actions still apply to the selected row, and superseded image work is cancelled within the two fixed decoder workers.
 See the [illustrated image-selection and PickStatus guide](docs/image-selection.md) for every state, verification, pending requests, failures, and shared picks.
 Hover any button for an explanation; the filter dropdown also has help text. Retry opens an ownership choice when a legacy export fits different original filenames with identical bytes.

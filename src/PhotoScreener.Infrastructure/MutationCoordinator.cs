@@ -132,7 +132,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                     MutationRequest latest;
                     lock (gate) latest = Latest(affected) ?? request;
                     sequence = latest.Sequence; desired = latest.Desired ?? (observation.Picked.Value ^ latest.UnknownParity);
-                    if (desired != observation.Picked)
+                    if (desired != observation.Picked || desired == true && RawCompanions.Find(affected, token).Count > 0)
                     {
                         if (!writers.ContainsKey(request.Binding.ExportRoot))
                         {
@@ -141,7 +141,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                         }
                         if (desired == true)
                         {
-                            var copy = store.Pick(request.Photo, request.Binding, () =>
+                            var copy = store.PickSelection(request.Photo, request.Binding, affected, knownBindings, () =>
                             {
                                 lock (gate)
                                 {
@@ -156,7 +156,7 @@ public sealed class MutationCoordinator : IAsyncDisposable
                             // Recheck name ownership immediately before destructive work.
                             observation = comparer.Compare(request.Photo, index, AssociationSources.Read(request.Photo, index, knownBindings, token), token);
                             if (observation.Picked != true) throw new IOException(observation.Error ?? "Export association changed before removal; retry.");
-                            store.Remove(request.Photo, request.Binding, observation.Copies, token);
+                            store.RemoveSelection(request.Photo, request.Binding, observation.Copies, affected, knownBindings, token);
                             var fresh = comparer.IndexAssociation(request.Photo, request.Binding, token);
                             observation = comparer.Compare(request.Photo, fresh, AssociationSources.Read(request.Photo, fresh, knownBindings, token), token);
                             if (observation.Picked != false) throw new IOException(observation.Error ?? "Export copies changed during removal; retry to remove the remaining current copies.");

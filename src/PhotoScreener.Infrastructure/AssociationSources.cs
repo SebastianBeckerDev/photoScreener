@@ -18,7 +18,7 @@ public static class AssociationSources
             {
                 token.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(path);
-                if (!SourceCatalog.IsImage(name)) continue;
+                if (SourceCatalog.IsNef(requested.Name) ? !SourceCatalog.IsNef(name) : !SourceCatalog.IsImage(name)) continue;
                 if (!names.Add(name)) throw new IOException("Source image names differ only by case and cannot be safely distinguished in this session: " + name);
                 if (PathGuard.Comparer.Equals(path, requested.Path) ||
                     name != requested.Name && !entryNames.Any(entry => LegacyExportName.Candidate(name, entry))) continue;

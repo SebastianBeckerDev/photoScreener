@@ -2,6 +2,8 @@
 
 **A photo is picked when the designated export folder contains a verified copy of its current bytes.** Pressing Space requests a change; background work makes the files agree with that request. Original photos stay read-only.
 
+For JPEG+NEF captures, only the JPEG is reviewed and counted. Space also copies/removes its same-stem NEF companion. Verified RAW copies are completed before JPEG publication, and RAW removal errors retain the JPEG selection for retry. A NEF alone does not establish selection. See [JPEG/NEF companions](raw-jpeg-companions.md) for naming, older versions and interruption behavior.
+
 ![PickStatus overview: verified file observations and pending UI states](images/pick-status-flow.svg)
 
 [Open the full-size diagram](images/pick-status-flow.svg) or its [PNG export](images/pick-status-flow.png). The diagrams below are editable Mermaid source and render directly on GitHub. The tables provide the same information when a viewer cannot render diagrams.
