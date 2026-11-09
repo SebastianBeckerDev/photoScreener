@@ -54,18 +54,31 @@ public sealed class FullVolumeTests(ITestOutputHelper output)
         }
         var filler = Path.Combine(volume.Root, "filler.bin");
         await volume.ValidateMountedVolume();
+        var fillReachedNativeLimit = false;
         using (var fill = new FileStream(filler, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             var block = new byte[65536]; new Random(708).NextBytes(block);
             while (volume.Drive.AvailableFreeSpace > 512 * 1024 + block.Length)
             {
                 if (fill.Length > 80 * 1024 * 1024) throw new IOException("Test disk filling exceeded its fixed bound.");
-                fill.Write(block);
+                try { fill.Write(block); }
+                // APFS can exhaust allocatable blocks before statfs reports the
+                // requested reserve. This is expected only while filling our
+                // validated private image, not an export assertion to retry.
+                catch (IOException error) when ((error.HResult & 0xffff) is 28 or 39 or 112)
+                {
+                    fillReachedNativeLimit = true;
+                    // Leave room for the staging manifest and its directory
+                    // metadata, but less than either original image's bytes.
+                    fill.SetLength(Math.Max(0, fill.Length - 512 * 1024));
+                    break;
+                }
             }
             fill.Flush(true);
         }
         var freeBefore = volume.Drive.AvailableFreeSpace;
-        Assert.InRange(freeBefore, 1, 1024 * 1024 - 1);
+        Assert.True(fillReachedNativeLimit || freeBefore is >= 0 and < 1024 * 1024,
+            $"Test image was not filled: {freeBefore} available bytes and no native allocation failure.");
         var comparer = new FolderComparer();
         await using var coordinator = new MutationCoordinator(comparer); coordinator.RegisterPhoto(photo, binding);
         MutationResult? result = null; coordinator.Completed += value => result = value;
@@ -78,7 +91,7 @@ public sealed class FullVolumeTests(ITestOutputHelper output)
         Assert.DoesNotContain(Directory.EnumerateFiles(binding.ExportRoot), p => SourceCatalog.IsImage(p) || SourceCatalog.IsNef(p));
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(binding.ExportRoot, ".photoscreener", "staging")));
         Assert.Equal("preserve", File.ReadAllText(Path.Combine(binding.ExportRoot, "unrelated.txt")));
-        output.WriteLine($"{volume.Drive.DriveFormat} disk image: {volume.Drive.TotalSize} bytes, {freeBefore} free before failure; NEF={withNef}; error={result.Error}");
+        output.WriteLine($"{volume.Drive.DriveFormat} disk image: {volume.Drive.TotalSize} bytes, {freeBefore} reported free before failure; native filler limit={fillReachedNativeLimit}; NEF={withNef}; error={result.Error}");
         await volume.ValidateMountedVolume(); File.Delete(filler);
         coordinator.Submit(new(photo, binding, true, false, 2));
         await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(30));
