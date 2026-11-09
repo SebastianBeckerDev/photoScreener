@@ -13,8 +13,10 @@ public sealed class ZoomImage : Control
     private Vector offset;
     private Point? dragStart;
     private Vector dragOffset;
+    private bool dragged;
     public double Zoom { get; private set; } = 1;
     public event Action? ZoomChanged;
+    public event Action<Point>? DetailRequested;
     public Rect ImageRectangle
     {
         get
@@ -31,7 +33,7 @@ public sealed class ZoomImage : Control
         if (Source == null) return;
         using (context.PushClip(new Rect(Bounds.Size))) context.DrawImage(Source, new Rect(Source.Size), ImageRectangle);
     }
-    public void ZoomAt(Point anchor, double factor)
+    public void ZoomAt(Point anchor, double factor, bool notify = true)
     {
         if (Source == null || !double.IsFinite(factor) || factor <= 0) return;
         var next = Math.Clamp(Zoom * factor, 1, 16);
@@ -39,13 +41,21 @@ public sealed class ZoomImage : Control
         var center = new Point(Bounds.Width / 2, Bounds.Height / 2);
         var relative = anchor - center;
         offset = relative - (relative - offset) * (next / Zoom);
-        Zoom = next; ClampOffset(); UpdateCursor(); InvalidateVisual(); ZoomChanged?.Invoke();
+        Zoom = next; ClampOffset(); UpdateCursor(); InvalidateVisual(); if (notify) ZoomChanged?.Invoke();
     }
     public void ResetView(bool notify = false)
     {
         var changed = Zoom != 1;
         Zoom = 1; offset = default; dragStart = null;
         UpdateCursor(); InvalidateVisual(); if (notify && changed) ZoomChanged?.Invoke();
+    }
+    public void ShowDetailAt(Point anchor, double renderScaling)
+    {
+        if (Source is not Avalonia.Media.Imaging.Bitmap bitmap || renderScaling <= 0) return;
+        var rectangle = ImageRectangle;
+        if (rectangle.Width <= 0) return;
+        var target = Math.Clamp(bitmap.PixelSize.Width / (rectangle.Width / Zoom * renderScaling), 1, 16);
+        ZoomAt(anchor, target / Zoom, false);
     }
     private void ClampOffset()
     {
@@ -66,19 +76,27 @@ public sealed class ZoomImage : Control
     {
         base.OnPointerPressed(e);
         if (Source == null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        if (e.ClickCount == 2) { ResetView(true); e.Pointer.Capture(null); e.Handled = true; return; }
-        if (Zoom <= 1) return;
-        dragStart = e.GetPosition(this); dragOffset = offset; e.Pointer.Capture(this); e.Handled = true;
+        if (!ImageRectangle.Contains(e.GetPosition(this))) return;
+        dragStart = e.GetPosition(this); dragOffset = offset; dragged = false;
+        e.Pointer.Capture(this); e.Handled = true;
     }
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
         if (dragStart is not { } start) return;
-        offset = dragOffset + (e.GetPosition(this) - start); ClampOffset(); InvalidateVisual(); e.Handled = true;
+        var movement = e.GetPosition(this) - start;
+        if (movement.X * movement.X + movement.Y * movement.Y > 25) dragged = true;
+        if (dragged && Zoom > 1) { offset = dragOffset + movement; ClampOffset(); InvalidateVisual(); }
+        e.Handled = true;
     }
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        base.OnPointerReleased(e); dragStart = null; e.Pointer.Capture(null);
+        base.OnPointerReleased(e);
+        var click = dragStart.HasValue && !dragged && e.InitialPressMouseButton == MouseButton.Left;
+        dragStart = null; e.Pointer.Capture(null);
+        if (!click) return;
+        if (Zoom > 1) ResetView(true); else DetailRequested?.Invoke(e.GetPosition(this));
+        e.Handled = true;
     }
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) { base.OnPointerCaptureLost(e); dragStart = null; }
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

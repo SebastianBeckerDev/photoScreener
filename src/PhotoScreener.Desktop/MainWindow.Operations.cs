@@ -106,6 +106,11 @@ public partial class MainWindow
         coordinator.Completed += result => Dispatcher.UIThread.Post(() =>
         {
             var propagated = new HashSet<PhotoRow>();
+            // Comparison can remove a shared relationship while its optimistic
+            // request is still pending (for example, an inactive source was edited).
+            // The globally unique request sequence retains that membership until
+            // completion, even if the current association group has changed.
+            propagated.UnionWith(registered.Values.Where(row => row.Intent.Sequence == result.Sequence && row.Intent.Pending));
             foreach (var photo in result.Photos)
             {
                 registered.TryGetValue(photo.Path, out var requested);
@@ -141,6 +146,7 @@ public partial class MainWindow
                 if (current == stale) Text("CurrentStatus", stale.Status);
             }
             UpdateCounts();
+            if (exportAvailable != true && activeFolder != null) _ = RefreshExportAvailability(navigationContext.Token);
         }, DispatcherPriority.Normal);
         return coordinator;
     }

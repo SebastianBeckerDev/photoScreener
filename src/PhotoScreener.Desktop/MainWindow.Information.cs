@@ -12,10 +12,12 @@ public partial class MainWindow
     private long informationGeneration;
     private void InitializeInformation()
     {
-        this.FindControl<Button>("InfoButton")!.Click += (_, _) =>
+        this.FindControl<Button>("InfoToggleButton")!.Click += (_, _) =>
         {
             InfoPanel.IsVisible = !InfoPanel.IsVisible;
             if (InfoPanel.IsVisible && current != null) { LoadInformation(current); RequestPreview(); }
+            InfoToggleButton.Content = InfoPanel.IsVisible ? "›" : "‹";
+            SaveLayout();
             Surface.Focus();
         };
         Images.HistogramReady += (photo, context, histogram) => Dispatcher.UIThread.Post(() =>

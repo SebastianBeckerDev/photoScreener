@@ -48,7 +48,7 @@ public sealed class InformationTests
             var second = histogram.Values!.ToArray(); Assert.NotEqual(first, second);
             var peak = Enumerable.Range(0, 256).MaxBy(i => second[i]);
             Assert.InRange(peak, 17, 20); Assert.Equal(64 * 48, second.Sum());
-            window.FindControl<Button>("InfoButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.FindControl<Button>("InfoToggleButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.False(window.FindControl<Control>("InfoPanel")!.IsVisible);
             Assert.True(window.FindControl<Control>("ReviewSurface")!.IsFocused);
         }

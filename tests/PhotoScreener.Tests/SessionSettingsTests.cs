@@ -5,6 +5,31 @@ namespace PhotoScreener.Tests;
 public sealed class SessionSettingsTests
 {
     [Fact]
+    public void IndependentRecentRolesAndLayoutPreserveLastFolderAndOfflineEntries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "photoscreener-session-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var store = new SessionSettingsStore(Path.Combine(root, "session.json"));
+            for (var i = 0; i < 12; i++) { store.RememberFolder(Path.Combine(root, "source" + i)); store.RememberExport(Path.Combine(root, "target" + i)); }
+            var last = store.ReadLastFolder();
+            var preferences = store.ReadPreferences();
+            Assert.Equal(10, preferences.RecentSources.Length); Assert.Equal(10, preferences.RecentExports.Length);
+            Assert.EndsWith("source11", preferences.RecentSources[0]); Assert.EndsWith("target11", preferences.RecentExports[0]);
+            store.RememberLayout(preferences with { DirectoriesVisible = false, InfoVisible = false, StripVisible = false, DirectoryWidth = 310 });
+            store.RememberExport(Path.Combine(root, "target5"));
+            var restored = new SessionSettingsStore(Path.Combine(root, "session.json")).ReadPreferences();
+            Assert.False(restored.DirectoriesVisible); Assert.False(restored.InfoVisible); Assert.False(restored.StripVisible);
+            Assert.Equal(310, restored.DirectoryWidth); Assert.Equal(last, store.ReadLastFolder());
+            Assert.Equal(10, restored.RecentExports.Distinct().Count()); Assert.EndsWith("target5", restored.RecentExports[0]);
+            Assert.All(restored.RecentSources.Concat(restored.RecentExports), path => Assert.False(Directory.Exists(path)));
+            File.WriteAllText(Path.Combine(root, "session.json"), "{\"SchemaVersion\":1,\"LastFolder\":\"\",\"RecentSources\":[\"relative\"],\"DirectoryWidth\":99999}");
+            Assert.Empty(store.ReadPreferences().RecentSources); Assert.Equal(420, store.ReadPreferences().DirectoryWidth);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
     public void LastFolderSurvivesMissingDriveAndMalformedPreferencesAreOptional()
     {
         var root = Path.Combine(Path.GetTempPath(), "photoscreener-session-" + Guid.NewGuid().ToString("N"));

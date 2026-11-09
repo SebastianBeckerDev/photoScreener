@@ -20,10 +20,10 @@ internal sealed class SharedImage(Bitmap bitmap)
     public void Retain() => Interlocked.Increment(ref references);
     public void Release() { if (Interlocked.Decrement(ref references) == 0) Bitmap.Dispose(); }
 }
-public sealed record ImageRequest(Photo Photo, int Side, long Generation, bool Full, Action<ImageLease?, string?> Complete, object? Owner = null, bool Relaxed = false, bool IncludeHistogram = false);
+public sealed record ImageRequest(Photo Photo, int Side, long Generation, bool Full, Action<ImageLease?, string?> Complete, object? Owner = null, bool Relaxed = false, bool IncludeHistogram = false, int? Order = null);
 public sealed record ImageWorkTiming(Photo Photo, int Side, bool Full, double RevisionMs, double DecodeMs, double TotalMs, bool CacheHit);
 
-// Two fixed workers: latest focused low preview, and fair full/visible/idle work.
+// Two fixed workers: urgent focused preview/detail, and full/directional tiles/idle work.
 public sealed class PreviewScheduler : IAsyncDisposable
 {
     private readonly object gate = new();
@@ -41,13 +41,18 @@ public sealed class PreviewScheduler : IAsyncDisposable
         public ImageRequest Request { get; } = request;
         public CancellationTokenSource Cancellation { get; } = cancellation;
         public int WarmIndex { get; } = warmIndex;
+        public bool Delivered { get; set; }
     }
     private ActiveWork? activeQuick, activeSecondary;
     private ImageRequest? low, full;
     private ImageRequest? focusedQuick;
     private bool awaitingQuick;
     private IReadOnlyList<Photo> warming = [];
-    private int warmCursor, visibleRun;
+    private int warmCursor;
+    private Photo? priorityPhoto;
+    private int priorityOrder, navigationDirection = 1;
+    private string? protectedFocusKey;
+    private int protectedFocusSide;
     private long generation, bytes;
     private bool firstViewportReady;
     public int QueueCount { get { lock (gate) return visible.Count + adjacent.Count + (low is null ? 0 : 1) + (full is null ? 0 : 1); } }
@@ -66,19 +71,74 @@ public sealed class PreviewScheduler : IAsyncDisposable
         lock (gate)
         {
             activeQuick?.Cancellation.Cancel(); activeSecondary?.Cancellation.Cancel();
-            generation = value; warming = photos; warmCursor = visibleRun = 0;
+            generation = value; warming = photos; warmCursor = 0;
+            priorityPhoto = null; protectedFocusKey = null; protectedFocusSide = 0;
             low = full = focusedQuick = null; awaitingQuick = false; visible.Clear(); adjacent.Clear(); firstViewportReady = false;
         }
     }
     public void SetWarmPhotos(IReadOnlyList<Photo> photos) { lock (gate) warming = photos; Wake(secondarySignal); }
+    public void SetNavigationPriority(Photo photo, int order, int direction)
+    {
+        lock (gate)
+        {
+            if (priorityPhoto != photo) { protectedFocusKey = null; protectedFocusSide = 0; }
+            priorityPhoto = photo; priorityOrder = order; navigationDirection = direction < 0 ? -1 : 1;
+        }
+    }
+    private (int Group, int Distance) VisibleRank(ImageRequest request)
+    {
+        if (request.Photo == priorityPhoto) return (0, 0);
+        if (request.Order is not { } order || priorityPhoto == null) return (3, 0);
+        var distance = order - priorityOrder;
+        return (Math.Sign(distance) == navigationDirection ? 1 : 2, Math.Abs(distance));
+    }
+    private LinkedListNode<ImageRequest>? BestVisible(bool worst = false)
+    {
+        var chosen = visible.First;
+        for (var node = chosen?.Next; node != null; node = node.Next)
+        {
+            var comparison = VisibleRank(node.Value).CompareTo(VisibleRank(chosen!.Value));
+            if (worst ? comparison >= 0 : comparison < 0) chosen = node;
+        }
+        return chosen;
+    }
+    private void TrimVisible()
+    {
+        while (visible.Count > 24 && BestVisible(true) is { } worst) visible.Remove(worst);
+    }
+    private void InterruptSecondary()
+    {
+        if (activeSecondary is not { } work) return;
+        var request = work.Request;
+        if (!work.Delivered && request.Side == 160 && !request.Full && !request.Relaxed && request.Generation == generation &&
+            !visible.Any(r => request.Owner != null ? ReferenceEquals(r.Owner, request.Owner) : r.Owner == null && r.Photo == request.Photo))
+        { visible.AddLast(request); TrimVisible(); }
+        work.Cancellation.Cancel();
+    }
     public void Focus(ImageRequest quick, ImageRequest refinement)
     {
         lock (gate)
         {
             if (quick.Generation != generation || refinement.Generation != generation) return;
+            if (priorityPhoto != quick.Photo)
+            { priorityPhoto = quick.Photo; priorityOrder = quick.Order ?? 0; protectedFocusKey = null; protectedFocusSide = 0; }
             activeQuick?.Cancellation.Cancel();
-            if (activeSecondary is { Request.Full: true } or { Request.Relaxed: true }) activeSecondary.Cancellation.Cancel();
+            InterruptSecondary();
             low = focusedQuick = quick; full = refinement; awaitingQuick = true;
+        }
+        Wake(urgentSignal); Wake(secondarySignal);
+    }
+    // The focused photo is already visible. Detail/zoom refinement can use the
+    // urgent worker directly, without rereading a quick preview or waiting for tiles.
+    public void Refine(ImageRequest request)
+    {
+        lock (gate)
+        {
+            if (!request.Full || request.Generation != generation) return;
+            if (priorityPhoto != null && priorityPhoto != request.Photo) return;
+            priorityPhoto ??= request.Photo;
+            activeQuick?.Cancellation.Cancel(); InterruptSecondary();
+            low = focusedQuick = request; full = null; awaitingQuick = true;
         }
         Wake(urgentSignal); Wake(secondarySignal);
     }
@@ -89,6 +149,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
             activeQuick?.Cancellation.Cancel();
             if (activeSecondary is { Request.Full: true }) activeSecondary.Cancellation.Cancel();
             low = full = focusedQuick = null; awaitingQuick = false;
+            priorityPhoto = null; protectedFocusKey = null; protectedFocusSide = 0;
         }
         Wake(secondarySignal);
     }
@@ -102,8 +163,7 @@ public sealed class PreviewScheduler : IAsyncDisposable
             // callback so its control generation receives the result instead of discarding it.
             for (var node = visible.First; node != null; node = node.Next)
                 if (request.Owner != null ? ReferenceEquals(node.Value.Owner, request.Owner) : node.Value.Owner == null && node.Value.Photo.Path == request.Photo.Path) { visible.Remove(node); break; }
-            if (visible.Count >= 24) visible.RemoveLast();
-            visible.AddFirst(request);
+            visible.AddLast(request); TrimVisible();
         }
         Wake(secondarySignal);
     }
@@ -150,9 +210,14 @@ public sealed class PreviewScheduler : IAsyncDisposable
                 ImageRequest? request = null; ActiveWork? work; var warmIndex = -1;
                 lock (gate)
                 {
-                    // Never refine ahead of the focused quick image. At most four visible tiles precede full.
-                    if (!awaitingQuick && full != null && (visible.Count == 0 || visibleRun >= 4)) { request = full; full = null; visibleRun = 0; }
-                    else if (!awaitingQuick && visible.First != null) { request = visible.First.Value; visible.RemoveFirst(); visibleRun++; }
+                    // A canceled native detail call may still occupy the urgent
+                    // worker. The other fixed worker can show the newly focused
+                    // quick image immediately instead of waiting for that call.
+                    if (activeQuick is { Request.Full: true } blocked && blocked.Cancellation.IsCancellationRequested && low is { Full: false })
+                    { request = low; low = null; }
+                    // The current quick/full image precedes unrelated visible tiles.
+                    else if (!awaitingQuick && full != null) { request = full; full = null; }
+                    else if (!awaitingQuick && BestVisible() is { } tile) { request = tile.Value; visible.Remove(tile); }
                     else if (!awaitingQuick && adjacent.Count > 0) request = adjacent.Dequeue();
                     else if (!awaitingQuick && firstViewportReady && warmCursor < warming.Count)
                     {
@@ -190,6 +255,10 @@ public sealed class PreviewScheduler : IAsyncDisposable
                 if (request.Generation != generation) return;
                 if (request.Photo.Revision.ChangeToken != null && cache.TryGetValue(Key(request), out var hit))
                 { recency.Remove(hit.Node); recency.AddFirst(hit.Node); lease = new(hit.Image); cacheHit = true; }
+                else if (request.Side == 160 && !request.Relaxed && request.Photo.Revision.ChangeToken != null && cache.TryGetValue(Key(request with { Side = 800 }), out var quick))
+                { recency.Remove(quick.Node); recency.AddFirst(quick.Node); lease = new(quick.Image); cacheHit = true; }
+                if (lease != null && request.Full && request.Photo == priorityPhoto && request.Side >= protectedFocusSide)
+                { protectedFocusKey = Key(request); protectedFocusSide = request.Side; }
             }
             if (lease == null)
             {
@@ -210,16 +279,41 @@ public sealed class PreviewScheduler : IAsyncDisposable
                     var key = Key(request);
                     if (cache.Remove(key, out var old)) { bytes -= old.Image.Bytes; recency.Remove(old.Node); old.Image.Release(); }
                     cache[key] = (image, recency.AddFirst(key)); bytes += image.Bytes;
+                    if (request.Full && request.Photo == priorityPhoto && request.Side >= protectedFocusSide)
+                    { protectedFocusKey = key; protectedFocusSide = request.Side; }
                     lease = new(image);
                     if (request.Side == 160 && !diskHit && request.Photo.Revision.ChangeToken != null) cacheWriteLease = new(image);
                     while (bytes > 64L * 1024 * 1024 && recency.Last is { } last)
-                    { var evicted = cache[last.Value]; cache.Remove(last.Value); recency.RemoveLast(); bytes -= evicted.Image.Bytes; evicted.Image.Release(); }
+                    {
+                        if (last.Value == protectedFocusKey && last.Previous != null) last = last.Previous;
+                        var evicted = cache[last.Value]; cache.Remove(last.Value); recency.Remove(last); bytes -= evicted.Image.Bytes; evicted.Image.Release();
+                    }
                 }
             }
             token.ThrowIfCancellationRequested();
             if (request.IncludeHistogram) histogramLease = lease!.Fork();
             Decoded?.Invoke(request.Photo, request.Full, watch.Elapsed.TotalMilliseconds);
             WorkMeasured?.Invoke(new(request.Photo, request.Side, request.Full, revisionMs, decodeMs, watch.Elapsed.TotalMilliseconds, cacheHit));
+            // A queued current thumbnail can share the just-decoded quick image:
+            // it appears with the main preview instead of opening the JPEG again.
+            List<ImageRequest> currentTiles = [];
+            lock (gate)
+            {
+                work.Delivered = true;
+                if (!request.Full && request.Side == 800 && request.Photo == priorityPhoto)
+                    for (var node = visible.First; node != null;)
+                    {
+                        var next = node.Next;
+                        if (node.Value.Photo == request.Photo) { currentTiles.Add(node.Value); visible.Remove(node); }
+                        node = next;
+                    }
+            }
+            foreach (var tile in currentTiles)
+            {
+                var tileLease = lease!.Fork();
+                try { tile.Complete(tileLease, null); }
+                catch { tileLease.Dispose(); throw; }
+            }
             request.Complete(lease, null); lease = null;
             if (histogramLease != null)
             {
@@ -258,6 +352,6 @@ public sealed class PreviewScheduler : IAsyncDisposable
     }
     public void ClearCache()
     {
-        lock (gate) { foreach (var entry in cache.Values) entry.Image.Release(); cache.Clear(); recency.Clear(); bytes = 0; }
+        lock (gate) { foreach (var entry in cache.Values) entry.Image.Release(); cache.Clear(); recency.Clear(); bytes = 0; protectedFocusKey = null; protectedFocusSide = 0; }
     }
 }

@@ -18,10 +18,10 @@ public sealed class ProjectTests
         using var bitmap = new SKBitmap(64, 48); bitmap.Erase(color);
         using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 95); File.WriteAllBytes(path, encoded.ToArray());
     }
-    private static async Task Wait(Func<bool> condition)
+    private static async Task Wait(Func<bool> condition, Func<string>? diagnostic = null)
     {
         for (var i = 0; i < 500 && !condition(); i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
-        Assert.True(condition());
+        Assert.True(condition(), diagnostic?.Invoke());
     }
     private static async Task EditImage(string path, SKColor color)
     {
@@ -49,29 +49,35 @@ public sealed class ProjectTests
             await Task.Run(() => { resolver.Bind(one, target, [one, two]); resolver.Bind(two, target, [one, two]); });
             var strip = window.FindControl<ListBox>("Filmstrip")!;
             await window.OpenFolder(one); var first = Assert.IsType<PhotoRow>(strip.SelectedItem);
-            await Wait(() => first.Picked == true);
+            await Wait(() => first.Picked == true, () => "Initial first pick: " + first.Status);
             await window.OpenFolder(two); var second = Assert.IsType<PhotoRow>(strip.SelectedItem);
-            await Wait(() => second.Picked == true && second.SharedFolderCount == 2);
+            await Wait(() => second.Picked == true && second.SharedFolderCount == 2, () => $"Initial shared pick: first={first.Status}; second={second.Status}");
             Assert.Equal(2, first.SharedFolderCount);
             Assert.Contains("shared across 2 folders", window.FindControl<TextBlock>("CurrentStatus")!.Text);
             window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
-            await Wait(() => first.Picked == false && second.Picked == false);
+            await Wait(() => first.Picked == false && second.Picked == false, () => $"Shared unpick: first={first.Status}; second={second.Status}; reviewFocused={window.FindControl<Control>("ReviewSurface")!.IsFocused}");
             Assert.Same(second, strip.SelectedItem); Assert.Equal(2, second.SharedFolderCount);
             Assert.Empty(Directory.EnumerateFiles(target, "*.JPG"));
             Assert.Equal(bytes, File.ReadAllBytes(firstPath)); Assert.Equal(bytes, File.ReadAllBytes(secondPath));
             // A previously shared original can be edited while its folder is inactive.
             window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
-            await Wait(() => first.Picked == true && second.Picked == true);
+            await Wait(() => first.Picked == true && second.Picked == true, () => $"Shared re-pick: first={first.Status}; second={second.Status}; reviewFocused={window.FindControl<Control>("ReviewSurface")!.IsFocused}");
             await window.OpenFolder(one); await EditImage(secondPath, SKColors.Blue);
             var editedBytes = File.ReadAllBytes(secondPath);
             window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None); window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
-            await Wait(() => first.Picked == false && !first.Intent.Pending);
-            await Wait(() => !second.Intent.Pending);
+            await Wait(() => first.Picked == false && !first.Intent.Pending, () => $"Active completion: sequence={first.Intent.Sequence}, pending={first.Intent.Pending}, picked={first.Picked}, status={first.Status}; visible={((PhotoRow?)strip.SelectedItem)?.Photo.Path}");
+            await Wait(() => !second.Intent.Pending, () => $"Inactive shared row: sequence={second.Intent.Sequence}, requested={second.Intent.Requested}, status={second.Status}; active row: sequence={first.Intent.Sequence}, status={first.Status}; visible={((PhotoRow?)strip.SelectedItem)?.Photo.Folder}");
             await window.OpenFolder(two); var changed = Assert.IsType<PhotoRow>(strip.SelectedItem);
-            Assert.NotSame(second, changed); await Wait(() => changed.Picked == false);
+            Assert.NotSame(second, changed); await Wait(() => changed.Picked == false, () => $"Edited source: picked={changed.Picked}, pending={changed.Intent.Pending}, status={changed.Status}; old row status={second.Status}");
             Assert.Equal(bytes, File.ReadAllBytes(firstPath)); Assert.Equal(editedBytes, File.ReadAllBytes(secondPath));
         }
-        finally { window.Close(); await Wait(() => !window.IsVisible); Directory.Delete(root, true); }
+        finally
+        {
+            // The edited inactive shared row retains a truthful checking/error
+            // entry. Explicitly discard it before closing, as the UI now requires.
+            Click(window, "ActivityButton"); Click(window, "CancelButton");
+            window.Close(); await Wait(() => !window.IsVisible); Directory.Delete(root, true);
+        }
     }
     [AvaloniaFact]
     public async Task ReturningFromProjectPicksAndRefreshingDoesNotDuplicateCachedFolderRows()
@@ -82,7 +88,7 @@ public sealed class ProjectTests
         try
         {
             await window.OpenFolder(root);
-            Click(window, "ProjectPickedButton");
+            window.ShowProjectPicks();
             await window.OpenFolder(root, true);
             var strip = window.FindControl<ListBox>("Filmstrip")!;
             var shown = strip.Items.Cast<PhotoRow>().ToArray();
@@ -144,12 +150,12 @@ public sealed class ProjectTests
         var window = new MainWindow(); window.Show();
         try
         {
-            await window.OpenFolder(root); Click(window, "ProjectPickedButton");
+            await window.OpenFolder(root); window.ShowProjectPicks();
             await Wait(() => window.FindControl<TextBlock>("FolderStatus")!.Text?.Contains("scan complete") == true);
             var strip = window.FindControl<ListBox>("Filmstrip")!;
             Assert.Equal(2, strip.Items.Count); Assert.All(strip.Items.Cast<PhotoRow>(), row => Assert.False(row.IsExportOnly));
             await EditImage(a, SKColors.Blue); File.Delete(b);
-            Click(window, "ProjectPickedButton");
+            window.ShowProjectPicks();
             await Wait(() => window.FindControl<TextBlock>("FolderStatus")!.Text?.Contains("scan complete") == true);
             Assert.Equal(2, strip.Items.Count); Assert.All(strip.Items.Cast<PhotoRow>(), row => Assert.True(row.IsExportOnly));
             Assert.StartsWith("0 picked / 1", window.FindControl<TextBlock>("Counts")!.Text);

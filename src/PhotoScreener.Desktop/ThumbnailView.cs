@@ -24,6 +24,6 @@ public sealed class ThumbnailView : Image
         {
             if (version != request || DataContext != row || this.GetVisualRoot() == null) { result?.Dispose(); return; }
             Source = null; lease?.Dispose(); lease = result; Source = result?.Bitmap;
-        }, DispatcherPriority.Background), this));
+        }, DispatcherPriority.Background), this, Order: window.ThumbnailOrder(row)));
     }
 }

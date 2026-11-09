@@ -14,6 +14,7 @@ public sealed class PhotoRow(Photo photo, ExportBinding binding) : ObservableObj
     public int SharedFolderCount { get; private set; }
     public string Status => (IsExportOnly ? "Unmatched / older export · preserved" : error ?? (Intent.UnknownParity ? "Checking · change queued" : Intent.Pending ? Intent.Requested == true ? "Copying…" : "Removing…" : Observation.Status.ToString())) + (SharedFolderCount > 1 ? $" · shared across {SharedFolderCount} folders" : "");
     public bool? Picked => Intent.Observed;
+    public bool HasError => error != null;
     private string? error;
     public event Action<PhotoRow, bool?, bool?>? PickedChanged;
     public void Toggle(long sequence) { error = null; Intent.Toggle(sequence); Notify(); }
@@ -28,5 +29,5 @@ public sealed class PhotoRow(Photo photo, ExportBinding binding) : ObservableObj
     }
     public void Fail(string message) { error = "Error · " + message; Notify(); }
     public bool SetSharedFolderCount(int count) { if (SharedFolderCount == count) return false; SharedFolderCount = count; OnPropertyChanged(nameof(SharedFolderCount)); Notify(); return true; }
-    public void Notify() { OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Picked)); }
+    public void Notify() { OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Picked)); OnPropertyChanged(nameof(HasError)); }
 }

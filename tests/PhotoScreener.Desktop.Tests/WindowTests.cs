@@ -257,7 +257,7 @@ public sealed class WindowTests
                 var comparer = new FolderComparer(); using var owner = new ExportWriter(binding, [folder]); new ExportStore(comparer).Pick(photo, binding, () => true, default);
             }
             var window = new MainWindow(); window.Show(); await window.OpenFolder(root);
-            window.FindControl<Button>("ProjectPickedButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.ShowProjectPicks();
             var strip = window.FindControl<ListBox>("Filmstrip")!;
             for (var i = 0; i < 150 && strip.Items.Count < 2; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
             Assert.Equal(2, strip.Items.Count); Assert.Equal(1, window.FindControl<ComboBox>("FilterBox")!.SelectedIndex);

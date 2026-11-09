@@ -1,6 +1,6 @@
 # LumaPick review UI concept
 
-Status: concept review; application UI has not yet been changed. The user requested three collapsible areas and removal of the crowded toolbar. The following decisions were confirmed during review:
+Status: implemented and locally verified on Windows, 2026-11-09. The user approved three collapsible areas and removal of the crowded toolbar. The following decisions were confirmed during review:
 
 | Decision | Agreed behavior |
 | --- | --- |
@@ -30,4 +30,12 @@ Click-to-detail executes on pointer release after distinguishing a click from a 
 
 100% refers to the detailed decoded preview at physical display pixels, including DPI/Retina. The initial fit-size bitmap may provide no extra detail: clicking must request the higher-resolution focused preview before completing the 100% intent, retain the image while loading, and reject late results after navigation. The existing 3840-pixel decode cap and 16×-Fit zoom bound remain the current limits. For small photos already shown at the available detail, Fit can remain unchanged. Original-resolution cropped inspection is a separate future enhancement.
 
-Implementation should preserve the verified export/NEF protocols, asynchronous visible-first image pipeline, generation guards, source protection and immediate keyboard feedback. This layout is a presentation change; it must not reinterpret completed exports or silently redirect pending jobs.
+The implementation retains the export/NEF protocols, generation guards, source protection and immediate keyboard feedback. Export binding changes are serialized, and a newer choice supersedes earlier validation without redirecting captured pending jobs.
+
+## Preview priority
+
+The selected photo's quick image and full preview precede unrelated visible thumbnails. Its thumbnail can share the freshly decoded quick image. Visible neighbors are ordered by distance in the latest selection direction, then by distance in the opposite direction; initial direction is right. Four upcoming quick previews are prefetched in that direction after foreground work. Visual attachment order does not reverse this queue.
+
+A click requesting detail uses the urgent decoder directly while retaining the displayed image. It does not request the quick preview again or wait for queued thumbnails. Interrupted visible tiles remain eligible for retry. If an obsolete native detail call has not yet returned, the other fixed worker can display the newly selected photo. There remain two image workers and a bounded 64 MiB cache; the current detailed preview is protected from eviction by idle warming. Volumes without a supported native change token continue to bypass cache reuse, so a first detail decode or repeated reads on such storage can still take time.
+
+Verification: 65 local Release desktop tests passed, including bidirectional ordering, an uninterruptible native-call simulation, actual tree/keyboard input, explicit export binding, panel persistence and physical-pixel click zoom. A real Windows window using eight generated JPEG fixtures was rendered and inspected. These checks do not establish photographic reference-workload timing or Mac execution.

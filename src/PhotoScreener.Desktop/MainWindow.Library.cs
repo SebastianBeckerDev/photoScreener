@@ -1,15 +1,11 @@
-using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using PhotoScreener.Infrastructure;
 
 namespace PhotoScreener.Desktop;
-public sealed record FolderEntry(string Path, string Label);
 public partial class MainWindow
 {
-    private readonly ObservableCollection<FolderEntry> folderEntries = [];
-    private readonly HashSet<string> discoveredFolders = new(PathGuard.Comparer);
-    private LibraryWorker? library, projectPicks;
-    private CancellationTokenSource libraryContext = new(), pickedContext = new();
+    private LibraryWorker? projectPicks;
+    private CancellationTokenSource pickedContext = new();
     private string? projectRoot;
     private long projectGeneration;
     private bool projectComplete;
@@ -19,15 +15,9 @@ public partial class MainWindow
     private void DiscoverProject(string root)
     {
         if (projectRoot != null && PathGuard.Within(root, projectRoot)) return;
-        libraryContext.Cancel(); libraryContext.Dispose(); libraryContext = new();
-        var token = libraryContext.Token;
-        projectRoot = root; discoveredFolders.Clear(); folderEntries.Clear();
-        library ??= new(bindings, comparer);
-        library.Submit(new(root, false, batch => Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (token.IsCancellationRequested || !PathGuard.Comparer.Equals(projectRoot, root)) return;
-            if (!batch.Complete && discoveredFolders.Add(batch.Folder)) folderEntries.Add(new(batch.Folder, batch.Folder == projectRoot ? Path.GetFileName(projectRoot) : Path.GetRelativePath(projectRoot, batch.Folder)));
-        }, DispatcherPriority.Background).GetTask(), token, []));
+        projectRoot = root;
+        // The directory panel discovers children on expansion. A complete source
+        // tree scan is reserved for the explicit project-picked review action.
     }
     private void ScanProjectPicks()
     {

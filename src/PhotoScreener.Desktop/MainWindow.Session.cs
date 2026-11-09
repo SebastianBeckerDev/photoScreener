@@ -8,6 +8,9 @@ public partial class MainWindow
     private void RememberLastFolder(string folder)
     {
         lastSuccessfulFolder = folder;
+        RememberRecent(recentSources, folder);
+        RememberExportDirectory(bindings.Resolve(folder).ExportRoot);
+        _ = RefreshRecents(navigationContext.Token);
         if (sessionSettings != null) mutations?.RunIdle("last-folder", () => sessionSettings.RememberFolder(folder));
     }
 
@@ -16,7 +19,7 @@ public partial class MainWindow
 
     private async Task RestoreLastFolder()
     {
-        if (sessionSettings == null) return;
+        if (sessionSettings == null || folderOpenRequest != 0) return;
         var request = folderOpenRequest;
         var folder = await Task.Run(sessionSettings.ReadLastFolder);
         if (closing || request != folderOpenRequest) return;

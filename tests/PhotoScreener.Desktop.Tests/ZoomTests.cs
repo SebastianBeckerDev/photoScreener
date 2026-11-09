@@ -13,6 +13,66 @@ namespace PhotoScreener.Desktop.Tests;
 public sealed class ZoomTests
 {
     [AvaloniaFact]
+    public async Task ClickLoadsDetailAtPhysicalPixelScaleKeepsPointerAnchorAndSecondClickFits()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "lumapick-click-zoom-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        using (var pixels = new SKBitmap(4000, 3000))
+        {
+            pixels.Erase(SKColors.Coral); using var encoded = pixels.Encode(SKEncodedImageFormat.Jpeg, 95);
+            File.WriteAllBytes(Path.Combine(root, "a.JPG"), encoded.ToArray());
+        }
+        var window = new MainWindow { Width = 1000, Height = 750 }; window.Show();
+        async Task Wait(Func<bool> condition)
+        {
+            for (var i = 0; i < 500 && !condition(); i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+            Assert.True(condition());
+        }
+        try
+        {
+            var full = false; window.PreviewPublished += (_, detailed) => full |= detailed;
+            await window.OpenFolder(root); await Wait(() => full);
+            var image = window.FindControl<ZoomImage>("Preview")!;
+            var anchor = new Point(image.Bounds.Width / 2 + 12, image.Bounds.Height / 2 + 8);
+            var before = image.ImageRectangle;
+            var u = (anchor.X - before.X) / before.Width; var v = (anchor.Y - before.Y) / before.Height;
+            var windowPoint = image.TranslatePoint(anchor, window)!.Value;
+            window.MouseDown(windowPoint, MouseButton.Left, RawInputModifiers.None); window.MouseUp(windowPoint, MouseButton.Left, RawInputModifiers.None);
+            Assert.NotNull(image.Source);
+            await Wait(() => image.Zoom > 1 && window.FindControl<TextBlock>("ZoomStatus")!.Text != "Loading 100% preview…");
+            var bitmap = Assert.IsAssignableFrom<Bitmap>(image.Source);
+            Assert.Equal(bitmap.PixelSize.Width / window.RenderScaling, image.ImageRectangle.Width, 4);
+            Assert.Equal(anchor.X, image.ImageRectangle.X + u * image.ImageRectangle.Width, 4);
+            Assert.Equal(anchor.Y, image.ImageRectangle.Y + v * image.ImageRectangle.Height, 4);
+            window.MouseDown(windowPoint, MouseButton.Left, RawInputModifiers.None); window.MouseUp(windowPoint, MouseButton.Left, RawInputModifiers.None);
+            Assert.Equal(1, image.Zoom); Assert.Equal("Fit", window.FindControl<TextBlock>("ZoomStatus")!.Text);
+            Assert.True(window.FindControl<Control>("ReviewSurface")!.IsFocused);
+        }
+        finally
+        {
+            window.Close(); await Wait(() => !window.IsVisible); Directory.Delete(root, true);
+        }
+    }
+
+    [AvaloniaFact]
+    public void DetailScaleAccountsForRetinaAndDraggingDoesNotToggleFit()
+    {
+        using var pixels = new SKBitmap(1600, 1200); pixels.Erase(SKColors.Coral);
+        using var encoded = pixels.Encode(SKEncodedImageFormat.Png, 100);
+        using var stream = new MemoryStream(encoded.ToArray()); using var bitmap = new Bitmap(stream);
+        var image = new ZoomImage { Source = bitmap, Width = 400, Height = 300 };
+        var window = new Window { Content = image, Width = 400, Height = 300 }; window.Show();
+        try
+        {
+            Dispatcher.UIThread.RunJobs(); image.ShowDetailAt(new(200, 150), 2);
+            Assert.Equal(2, image.Zoom); Assert.Equal(800, image.ImageRectangle.Width);
+            window.MouseDown(new(200, 150), MouseButton.Left, RawInputModifiers.None);
+            window.MouseMove(new(230, 170), RawInputModifiers.LeftMouseButton);
+            window.MouseUp(new(230, 170), MouseButton.Left, RawInputModifiers.None);
+            Assert.Equal(2, image.Zoom);
+        }
+        finally { image.Source = null; window.Close(); }
+    }
+    [AvaloniaFact]
     public void WheelKeepsTheImagePointUnderThePointerAndPanStaysWithinTheImage()
     {
         using var pixels = new SKBitmap(400, 300); pixels.Erase(SKColors.Coral);
